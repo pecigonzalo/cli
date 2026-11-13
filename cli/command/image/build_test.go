@@ -6,16 +6,18 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/docker/cli/cli/streams"
 	"github.com/docker/cli/internal/test"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/pkg/archive"
 	"github.com/google/go-cmp/cmp"
+	"github.com/moby/go-archive/compression"
+	"github.com/moby/moby/client"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/fs"
 	"gotest.tools/v3/skip"
@@ -25,8 +27,8 @@ func TestRunBuildDockerfileFromStdinWithCompress(t *testing.T) {
 	t.Setenv("DOCKER_BUILDKIT", "0")
 	buffer := new(bytes.Buffer)
 	fakeBuild := newFakeBuild()
-	fakeImageBuild := func(ctx context.Context, context io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error) {
-		tee := io.TeeReader(context, buffer)
+	fakeImageBuild := func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+		tee := io.TeeReader(buildContext, buffer)
 		gzipReader, err := gzip.NewReader(tee)
 		assert.NilError(t, err)
 		return fakeBuild.build(ctx, gzipReader, options)
@@ -34,7 +36,7 @@ func TestRunBuildDockerfileFromStdinWithCompress(t *testing.T) {
 
 	cli := test.NewFakeCli(&fakeClient{imageBuildFunc: fakeImageBuild})
 	dockerfile := bytes.NewBufferString(`
-		FROM alpine:3.6
+		FROM alpine:frozen
 		COPY foo /
 	`)
 	cli.SetIn(streams.NewIn(io.NopCloser(dockerfile)))
@@ -47,14 +49,13 @@ func TestRunBuildDockerfileFromStdinWithCompress(t *testing.T) {
 	options.compress = true
 	options.dockerfileName = "-"
 	options.context = dir.Path()
-	options.untrusted = true
-	assert.NilError(t, runBuild(cli, options))
+	assert.NilError(t, runBuild(context.TODO(), cli, options))
 
 	expected := []string{fakeBuild.options.Dockerfile, ".dockerignore", "foo"}
 	assert.DeepEqual(t, expected, fakeBuild.filenames(t))
 
 	header := buffer.Bytes()[:10]
-	assert.Equal(t, archive.Gzip, archive.DetectCompression(header))
+	assert.Equal(t, compression.Gzip, compression.Detect(header))
 }
 
 func TestRunBuildResetsUidAndGidInContext(t *testing.T) {
@@ -66,7 +67,7 @@ func TestRunBuildResetsUidAndGidInContext(t *testing.T) {
 	dir := fs.NewDir(t, "test-build-context",
 		fs.WithFile("foo", "some content", fs.AsUser(65534, 65534)),
 		fs.WithFile("Dockerfile", `
-			FROM alpine:3.6
+			FROM alpine:frozen
 			COPY foo bar /
 		`),
 	)
@@ -74,8 +75,7 @@ func TestRunBuildResetsUidAndGidInContext(t *testing.T) {
 
 	options := newBuildOptions()
 	options.context = dir.Path()
-	options.untrusted = true
-	assert.NilError(t, runBuild(cli, options))
+	assert.NilError(t, runBuild(context.TODO(), cli, options))
 
 	headers := fakeBuild.headers(t)
 	expected := []*tar.Header{
@@ -109,43 +109,43 @@ COPY data /data
 	options := newBuildOptions()
 	options.context = dir.Path()
 	options.dockerfileName = df.Path()
-	options.untrusted = true
-	assert.NilError(t, runBuild(cli, options))
+	assert.NilError(t, runBuild(context.TODO(), cli, options))
 
 	expected := []string{fakeBuild.options.Dockerfile, ".dockerignore", "data"}
 	assert.DeepEqual(t, expected, fakeBuild.filenames(t))
 }
 
-// TestRunBuildFromLocalGitHubDirNonExistingRepo tests that build contexts
+// TestRunBuildFromGitHubSpecialCase tests that build contexts
 // starting with `github.com/` are special-cased, and the build command attempts
 // to clone the remote repo.
 // TODO: test "context selection" logic directly when runBuild is refactored
 // to support testing (ex: docker/cli#294)
 func TestRunBuildFromGitHubSpecialCase(t *testing.T) {
 	t.Setenv("DOCKER_BUILDKIT", "0")
-	cmd := NewBuildCommand(test.NewFakeCli(&fakeClient{}))
+	cmd := newBuildCommand(test.NewFakeCli(&fakeClient{}))
 	// Clone a small repo that exists so git doesn't prompt for credentials
 	cmd.SetArgs([]string{"github.com/docker/for-win"})
 	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
 	err := cmd.Execute()
 	assert.ErrorContains(t, err, "unable to prepare context")
 	assert.ErrorContains(t, err, "docker-build-git")
 }
 
-// TestRunBuildFromLocalGitHubDirNonExistingRepo tests that a local directory
+// TestRunBuildFromLocalGitHubDir tests that a local directory
 // starting with `github.com` takes precedence over the `github.com` special
 // case.
 func TestRunBuildFromLocalGitHubDir(t *testing.T) {
 	t.Setenv("DOCKER_BUILDKIT", "0")
 
 	buildDir := filepath.Join(t.TempDir(), "github.com", "docker", "no-such-repository")
-	err := os.MkdirAll(buildDir, 0777)
+	err := os.MkdirAll(buildDir, 0o777)
 	assert.NilError(t, err)
-	err = os.WriteFile(filepath.Join(buildDir, "Dockerfile"), []byte("FROM busybox\n"), 0644)
+	err = os.WriteFile(filepath.Join(buildDir, "Dockerfile"), []byte("FROM busybox\n"), 0o644)
 	assert.NilError(t, err)
 
-	client := test.NewFakeCli(&fakeClient{})
-	cmd := NewBuildCommand(client)
+	fakeCLI := test.NewFakeCli(&fakeClient{})
+	cmd := newBuildCommand(fakeCLI)
 	cmd.SetArgs([]string{buildDir})
 	cmd.SetOut(io.Discard)
 	err = cmd.Execute()
@@ -155,7 +155,7 @@ func TestRunBuildFromLocalGitHubDir(t *testing.T) {
 func TestRunBuildWithSymlinkedContext(t *testing.T) {
 	t.Setenv("DOCKER_BUILDKIT", "0")
 	dockerfile := `
-FROM alpine:3.6
+FROM alpine:frozen
 RUN echo hello world
 `
 
@@ -169,31 +169,59 @@ RUN echo hello world
 	cli := test.NewFakeCli(&fakeClient{imageBuildFunc: fakeBuild.build})
 	options := newBuildOptions()
 	options.context = tmpDir.Join("context-link")
-	options.untrusted = true
-	assert.NilError(t, runBuild(cli, options))
+	assert.NilError(t, runBuild(context.TODO(), cli, options))
 
 	assert.DeepEqual(t, fakeBuild.filenames(t), []string{"Dockerfile"})
 }
 
+// TestRunBuildRemoteContextDownloadError verifies that remote context
+// download errors are propagated.
+//
+// regression test for https://github.com/docker/cli/issues/7372
+func TestRunBuildRemoteContextDownloadError(t *testing.T) {
+	t.Setenv("DOCKER_BUILDKIT", "0")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	imageBuildCalled := false
+	cli := test.NewFakeCli(&fakeClient{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			imageBuildCalled = true
+			return client.ImageBuildResult{Body: io.NopCloser(bytes.NewReader(nil))}, nil
+		},
+	})
+
+	options := newBuildOptions()
+	options.context = server.URL
+
+	err := runBuild(context.Background(), cli, options)
+
+	assert.ErrorContains(t, err, "unable to download remote context")
+	assert.Assert(t, !imageBuildCalled, "ImageBuild should not be called when downloading the remote context fails")
+}
+
 type fakeBuild struct {
 	context *tar.Reader
-	options types.ImageBuildOptions
+	options client.ImageBuildOptions
 }
 
 func newFakeBuild() *fakeBuild {
 	return &fakeBuild{}
 }
 
-func (f *fakeBuild) build(_ context.Context, context io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error) {
-	f.context = tar.NewReader(context)
+func (f *fakeBuild) build(_ context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+	f.context = tar.NewReader(buildContext)
 	f.options = options
 	body := new(bytes.Buffer)
-	return types.ImageBuildResponse{Body: io.NopCloser(body)}, nil
+	return client.ImageBuildResult{Body: io.NopCloser(body)}, nil
 }
 
 func (f *fakeBuild) headers(t *testing.T) []*tar.Header {
 	t.Helper()
-	headers := []*tar.Header{}
+	var headers []*tar.Header
 	for {
 		hdr, err := f.context.Next()
 		switch err {
@@ -209,10 +237,11 @@ func (f *fakeBuild) headers(t *testing.T) []*tar.Header {
 
 func (f *fakeBuild) filenames(t *testing.T) []string {
 	t.Helper()
-	names := []string{}
-	for _, header := range f.headers(t) {
+	h := f.headers(t)
+	names := make([]string, 0, len(h))
+	for _, header := range h {
 		names = append(names, header.Name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }

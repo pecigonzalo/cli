@@ -4,8 +4,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/containerd/errdefs"
+	"github.com/distribution/reference"
 	"github.com/docker/cli/cli/manifest/types"
-	"github.com/docker/distribution/reference"
 	"github.com/google/go-cmp/cmp"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
@@ -81,17 +82,16 @@ func TestStoreSaveAndGet(t *testing.T) {
 		},
 	}
 
-	for _, testcase := range testcases {
-		testcase := testcase
-		t.Run(testcase.manifestRef.String(), func(t *testing.T) {
-			actual, err := store.Get(testcase.listRef, testcase.manifestRef)
-			if testcase.expectedErr != "" {
-				assert.Error(t, err, testcase.expectedErr)
-				assert.Check(t, IsNotFound(err))
+	for _, tc := range testcases {
+		t.Run(tc.manifestRef.String(), func(t *testing.T) {
+			actual, err := store.Get(tc.listRef, tc.manifestRef)
+			if tc.expectedErr != "" {
+				assert.Error(t, err, tc.expectedErr)
+				assert.Check(t, errdefs.IsNotFound(err))
 				return
 			}
 			assert.NilError(t, err)
-			assert.DeepEqual(t, testcase.expected, actual, cmpReferenceNamed)
+			assert.DeepEqual(t, tc.expected, actual, cmpReferenceNamed)
 		})
 	}
 }
@@ -118,5 +118,5 @@ func TestStoreGetListDoesNotExist(t *testing.T) {
 	listRef := ref("list")
 	_, err := store.GetList(listRef)
 	assert.Error(t, err, "No such manifest: list")
-	assert.Check(t, IsNotFound(err))
+	assert.Check(t, errdefs.IsNotFound(err))
 }

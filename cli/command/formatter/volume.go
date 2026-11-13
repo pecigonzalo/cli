@@ -1,12 +1,16 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package formatter
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types/volume"
-	units "github.com/docker/go-units"
+	"github.com/docker/go-units"
+	"github.com/moby/moby/api/types/volume"
 )
 
 const (
@@ -40,10 +44,10 @@ func NewVolumeFormat(source string, quiet bool) Format {
 }
 
 // VolumeWrite writes formatted volumes using the Context
-func VolumeWrite(ctx Context, volumes []*volume.Volume) error {
+func VolumeWrite(ctx Context, volumes []volume.Volume) error {
 	render := func(format func(subContext SubContext) error) error {
 		for _, vol := range volumes {
-			if err := format(&volumeContext{v: *vol}); err != nil {
+			if err := format(&volumeContext{v: vol}); err != nil {
 				return err
 			}
 		}
@@ -100,10 +104,11 @@ func (c *volumeContext) Labels() string {
 		return ""
 	}
 
-	var joinLabels []string
+	joinLabels := make([]string, 0, len(c.v.Labels))
 	for k, v := range c.v.Labels {
 		joinLabels = append(joinLabels, k+"="+v)
 	}
+	slices.Sort(joinLabels)
 	return strings.Join(joinLabels, ",")
 }
 

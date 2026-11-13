@@ -5,6 +5,11 @@
 # Sets the name of the company that produced the windows binary.
 PACKAGER_NAME ?=
 
+# The repository doesn't have a go.mod, but "go list", and "gotestsum"
+# expect to be run from a module.
+GO111MODULE=auto
+export GO111MODULE
+
 all: binary
 
 _:=$(shell ./scripts/warn-outside-container $(MAKECMDGOALS))
@@ -29,12 +34,12 @@ test: test-unit ## run tests
 
 .PHONY: test-unit
 test-unit: ## run unit tests, to change the output format use: GOTESTSUM_FORMAT=(dots|short|standard-quiet|short-verbose|standard-verbose) make test-unit
-	gotestsum -- $${TESTDIRS:-$(shell go list ./... | grep -vE '/vendor/|/e2e/')} $(TESTFLAGS)
+	gotestsum -- $${TESTDIRS:-$(shell go list ./... | grep -vE '/vendor/|/e2e/|/cmd/docker-trust')} $(TESTFLAGS)
 
 .PHONY: test-coverage
 test-coverage: ## run test coverage
 	mkdir -p $(CURDIR)/build/coverage
-	gotestsum -- $(shell go list ./... | grep -vE '/vendor/|/e2e/') -coverprofile=$(CURDIR)/build/coverage/coverage.txt
+	gotestsum -- $(shell go list ./... | grep -vE '/vendor/|/e2e/|/cmd/docker-trust') -coverprofile=$(CURDIR)/build/coverage/coverage.txt
 
 .PHONY: lint
 lint: ## run all the lint tools
@@ -45,8 +50,12 @@ shellcheck: ## run shellcheck validation
 	find scripts/ contrib/completion/bash -type f | grep -v scripts/winresources | grep -v '.*.ps1' | xargs shellcheck
 
 .PHONY: fmt
-fmt: ## run gofmt
-	go list -f {{.Dir}} ./... | xargs gofmt -w -s -d
+fmt: ## run gofumpt (if present) or gofmt
+	@if command -v gofumpt > /dev/null; then \
+		gofumpt -w -d -lang=1.24 . ; \
+	else \
+		go list -f {{.Dir}} ./... | xargs gofmt -w -s -d ; \
+	fi
 
 .PHONY: binary
 binary: ## build executable for Linux
@@ -58,32 +67,72 @@ dynbinary: ## build dynamically linked binary
 
 .PHONY: plugins
 plugins: ## build example CLI plugins
-	./scripts/build/plugins
+	scripts/build/plugins
+
+.PHONY: trust-plugin
+trust-plugin: ## build docker-trust CLI plugins
+	scripts/build/trust-plugin
+
+.PHONY: install-trust-plugin
+install-trust-plugin: trust-plugin
+install-trust-plugin: ## install docker-trust CLI plugins
+	install -D -m 0755 "$$(readlink -f build/docker-trust)" /usr/libexec/docker/cli-plugins/docker-trust
 
 .PHONY: vendor
 vendor: ## update vendor with go modules
 	rm -rf vendor
-	./scripts/vendor update
+	scripts/with-go-mod.sh scripts/vendor update
 
 .PHONY: validate-vendor
 validate-vendor: ## validate vendor
-	./scripts/vendor validate
+	scripts/with-go-mod.sh scripts/vendor validate
 
 .PHONY: mod-outdated
 mod-outdated: ## check outdated dependencies
-	./scripts/vendor outdated
+	scripts/with-go-mod.sh scripts/vendor outdated
 
 .PHONY: authors
 authors: ## generate AUTHORS file from git history
 	scripts/docs/generate-authors.sh
 
+.PHONY: completion
+completion: shell-completion
+completion: ## generate and install the shell-completion scripts
+# Note: this uses system-wide paths, and so may overwrite completion
+# scripts installed as part of deb/rpm packages.
+#
+# Given that this target is intended to debug/test updated versions, we could
+# consider installing in per-user (~/.config, XDG_DATA_DIR) paths instead, but
+# this will add more complexity.
+#
+# See https://github.com/docker/cli/pull/5770#discussion_r1927772710
+	install -D -p -m 0644 ./build/completion/bash/docker /usr/share/bash-completion/completions/docker
+	install -D -p -m 0644 ./build/completion/fish/docker.fish debian/docker-ce-cli/usr/share/fish/vendor_completions.d/docker.fish
+	install -D -p -m 0644 ./build/completion/zsh/_docker debian/docker-ce-cli/usr/share/zsh/vendor-completions/_docker
+
+
+build/docker:
+# This target is used by the "shell-completion" target, which requires either
+# "binary" or "dynbinary" to have been built. We don't want to trigger those
+# to prevent replacing a static binary with a dynamic one, or vice-versa.
+	@echo "Run 'make binary' or 'make dynbinary' first" && exit 1
+
+.PHONY: shell-completion
+shell-completion: build/docker # requires either "binary" or "dynbinary" to be built.
+shell-completion: ## generate shell-completion scripts
+	@ ./scripts/build/shell-completion
+
 .PHONY: manpages
 manpages: ## generate man pages from go source and markdown
-	scripts/docs/generate-man.sh
+	scripts/with-go-mod.sh scripts/docs/generate-man.sh
+
+.PHONY: mddocs
+mddocs: ## generate markdown files from go source
+	scripts/with-go-mod.sh scripts/docs/generate-md.sh
 
 .PHONY: yamldocs
 yamldocs: ## generate documentation YAML files consumed by docs repo
-	scripts/docs/generate-yaml.sh
+	scripts/with-go-mod.sh scripts/docs/generate-yaml.sh
 
 .PHONY: help
 help: ## print this help

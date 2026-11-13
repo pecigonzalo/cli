@@ -1,18 +1,19 @@
 package node
 
 import (
+	"errors"
 	"io"
 	"testing"
 
 	"github.com/docker/cli/internal/test"
-	"github.com/pkg/errors"
+	"github.com/moby/moby/client"
 	"gotest.tools/v3/assert"
 )
 
 func TestNodeRemoveErrors(t *testing.T) {
 	testCases := []struct {
 		args           []string
-		nodeRemoveFunc func() error
+		nodeRemoveFunc func() (client.NodeRemoveResult, error)
 		expectedError  string
 	}{
 		{
@@ -20,8 +21,8 @@ func TestNodeRemoveErrors(t *testing.T) {
 		},
 		{
 			args: []string{"nodeID"},
-			nodeRemoveFunc: func() error {
-				return errors.Errorf("error removing the node")
+			nodeRemoveFunc: func() (client.NodeRemoveResult, error) {
+				return client.NodeRemoveResult{}, errors.New("error removing the node")
 			},
 			expectedError: "error removing the node",
 		},
@@ -33,6 +34,7 @@ func TestNodeRemoveErrors(t *testing.T) {
 			}))
 		cmd.SetArgs(tc.args)
 		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
 		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
 	}
 }

@@ -1,20 +1,16 @@
----
-title: "version"
-description: "The version command description and usage"
-keywords: "version, architecture, api"
----
-
 # version
 
-```markdown
-Usage:  docker version [OPTIONS]
-
+<!---MARKER_GEN_START-->
 Show the Docker version information
 
-Options:
-  -f, --format string       Format the output using the given Go template
-      --help                Print usage
-```
+### Options
+
+| Name                                   | Type     | Default | Description                                                                                                                                                                                                                                                        |
+|:---------------------------------------|:---------|:--------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`-f`](#format), [`--format`](#format) | `string` |         | Format output using a custom template:<br>'json':             Print in JSON format<br>'TEMPLATE':         Print output using the given Go template.<br>Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates |
+
+
+<!---MARKER_GEN_END-->
 
 ## Description
 
@@ -29,9 +25,9 @@ number of the Docker CLI you are using.
 ### Default output
 
 The default output renders all version information divided into two sections;
-the "Client" section contains information about the Docker CLI and client
-components, and the "Server" section contains information about the Docker
-Engine and components used by the Engine, such as the "Containerd" and "Runc"
+the `Client` section contains information about the Docker CLI and client
+components, and the `Server` section contains information about the Docker
+Engine and components used by the Docker Engine, such as the containerd and runc
 OCI Runtimes.
 
 The information shown may differ depending on how you installed Docker and
@@ -41,30 +37,30 @@ machine running Docker Desktop:
 ```console
 $ docker version
 
-Client:
- Version:           20.10.16
- API version:       1.41
- Go version:        go1.17.10
- Git commit:        aa7e414
- Built:             Thu May 12 09:17:28 2022
- OS/Arch:           darwin/amd64
- Context:           default
+Client: Docker Engine - Community
+ Version:           28.5.1
+ API version:       1.51
+ Go version:        go1.24.8
+ Git commit:        e180ab8
+ Built:             Wed Oct  8 12:16:17 2025
+ OS/Arch:           darwin/arm64
+ Context:           remote-test-server
 
-Server: Docker Desktop 4.8.2 (77141)
+Server: Docker Desktop 4.19.0 (12345)
  Engine:
-  Version:          20.10.16
-  API version:      1.41 (minimum version 1.12)
-  Go version:       go1.17.10
-  Git commit:       f756502
-  Built:            Thu May 12 09:15:33 2022
+  Version:          27.5.1
+  API version:      1.47 (minimum version 1.24)
+  Go version:       go1.22.11
+  Git commit:       4c9b3b0
+  Built:            Wed Jan 22 13:41:24 2025
   OS/Arch:          linux/amd64
-  Experimental:     false
+  Experimental:     true
  containerd:
-  Version:          1.6.4
-  GitCommit:        212e8b6fa2f44b9c21b2798135fc6fb7c53efc16
+  Version:          v1.7.25
+  GitCommit:        bcc810d6b9066471b0b6fa75f557a15a1cbf31bb
  runc:
-  Version:          1.1.1
-  GitCommit:        v1.1.1-0-g52de29d
+  Version:          1.2.4
+  GitCommit:        v1.2.4-0-g6c52b3f
  docker-init:
   Version:          0.19.0
   GitCommit:        de40ad0
@@ -74,10 +70,10 @@ Server: Docker Desktop 4.8.2 (77141)
 
 Docker uses a client/server architecture, which allows you to use the Docker CLI
 on your local machine to control a Docker Engine running on a remote machine,
-which can be (for example) a machine running in the Cloud or inside a Virtual Machine.
+which can be (for example) a machine running in the cloud or inside a virtual machine.
 
 The following example switches the Docker CLI to use a [context](context.md)
-named "remote-test-server", which runs an older version of the Docker Engine
+named `remote-test-server`, which runs an older version of the Docker Engine
 on a Linux server:
 
 ```console
@@ -86,32 +82,33 @@ remote-test-server
 
 $ docker version
 
-Client:
- Version:           20.10.16
- API version:       1.40 (downgraded from 1.41)
- Go version:        go1.17.10
- Git commit:        aa7e414
- Built:             Thu May 12 09:17:28 2022
- OS/Arch:           darwin/amd64
+Client: Docker Engine - Community
+ Version:           28.5.1
+ API version:       1.51
+ Go version:        go1.24.8
+ Git commit:        e180ab8
+ Built:             Wed Oct  8 12:16:17 2025
+ OS/Arch:           darwin/arm64
  Context:           remote-test-server
 
 Server: Docker Engine - Community
  Engine:
-  Version:          19.03.8
-  API version:      1.40 (minimum version 1.12)
-  Go version:       go1.12.17
-  Git commit:       afacb8b
-  Built:            Wed Mar 11 01:29:16 2020
+  Version:          27.5.1
+  API version:      1.47 (minimum version 1.24)
+  Go version:       go1.22.11
+  Git commit:       4c9b3b0
+  Built:            Wed Jan 22 13:41:24 2025
   OS/Arch:          linux/amd64
+  Experimental:     true
  containerd:
-  Version:          v1.2.13
-  GitCommit:        7ad184331fa3e55e52b890ea95e65ba581ae3429
+  Version:          v1.7.25
+  GitCommit:        bcc810d6b9066471b0b6fa75f557a15a1cbf31bb
  runc:
-  Version:          1.0.0-rc10
-  GitCommit:        dc9208a3303feef5b3839f4323d9beb36df0a9dd
+  Version:          1.2.4
+  GitCommit:        v1.2.4-0-g6c52b3f
  docker-init:
-  Version:          0.18.0
-  GitCommit:        fec3683
+  Version:          0.19.0
+  GitCommit:        de40ad0
 ```
 
 ### API version and version negotiation
@@ -121,14 +118,14 @@ CLI is connecting with. When connecting with the Docker Engine, the Docker CLI
 and Docker Engine perform API version negotiation, and select the highest API
 version that is supported by both the Docker CLI and the Docker Engine.
 
-For example, if the CLI is connecting with a Docker 19.03 engine, it downgrades
-to API version 1.40 (refer to the [API version matrix](https://docs.docker.com/engine/api/#api-version-matrix)
+For example, if the CLI is connecting with Docker Engine version 27.5, it downgrades
+to API version 1.47 (refer to the [API version matrix](https://docs.docker.com/reference/api/engine/#api-version-matrix)
 to learn about the supported API versions for Docker Engine):
 
 ```console
 $ docker version --format '{{.Client.APIVersion}}'
 
-1.40
+1.47
 ```
 
 Be aware that API version can also be overridden using the `DOCKER_API_VERSION`
@@ -139,19 +136,19 @@ variable removes the override, and re-enables API version negotiation:
 
 ```console
 $ env | grep DOCKER_API_VERSION
-DOCKER_API_VERSION=1.39
+DOCKER_API_VERSION=1.50
 
 $ docker version --format '{{.Client.APIVersion}}'
-1.39
+1.50
 
 $ unset DOCKER_API_VERSION
 $ docker version --format '{{.Client.APIVersion}}'
-1.41
+1.51
 ```
 
 ## Examples
 
-### <a name=format></a> Format the output (--format)
+### <a name="format"></a> Format the output (--format)
 
 The formatting option (`--format`) pretty-prints the output using a Go template,
 which allows you to customize the output format, or to obtain specific information
@@ -163,7 +160,7 @@ page for details of the format.
 ```console
 $ docker version --format '{{.Server.Version}}'
 
-20.10.16
+28.5.1
 ```
 
 ### Get the client API version
@@ -173,7 +170,7 @@ The following example prints the API version that is used by the client:
 ```console
 $ docker version --format '{{.Client.APIVersion}}'
 
-1.41
+1.51
 ```
 
 The version shown is the API version that is negotiated between the client
@@ -185,5 +182,5 @@ above for more information.
 ```console
 $ docker version --format '{{json .}}'
 
-{"Client":{"Platform":{"Name":"Docker Engine - Community"},"Version":"19.03.8","ApiVersion":"1.40","DefaultAPIVersion":"1.40","GitCommit":"afacb8b","GoVersion":"go1.12.17","Os":"darwin","Arch":"amd64","BuildTime":"Wed Mar 11 01:21:11 2020","Experimental":true},"Server":{"Platform":{"Name":"Docker Engine - Community"},"Components":[{"Name":"Engine","Version":"19.03.8","Details":{"ApiVersion":"1.40","Arch":"amd64","BuildTime":"Wed Mar 11 01:29:16 2020","Experimental":"true","GitCommit":"afacb8b","GoVersion":"go1.12.17","KernelVersion":"4.19.76-linuxkit","MinAPIVersion":"1.12","Os":"linux"}},{"Name":"containerd","Version":"v1.2.13","Details":{"GitCommit":"7ad184331fa3e55e52b890ea95e65ba581ae3429"}},{"Name":"runc","Version":"1.0.0-rc10","Details":{"GitCommit":"dc9208a3303feef5b3839f4323d9beb36df0a9dd"}},{"Name":"docker-init","Version":"0.18.0","Details":{"GitCommit":"fec3683"}}],"Version":"19.03.8","ApiVersion":"1.40","MinAPIVersion":"1.12","GitCommit":"afacb8b","GoVersion":"go1.12.17","Os":"linux","Arch":"amd64","KernelVersion":"4.19.76-linuxkit","Experimental":true,"BuildTime":"2020-03-11T01:29:16.000000000+00:00"}}
+{"Client":"Version":"28.5.1","ApiVersion":"1.51", ...}
 ```

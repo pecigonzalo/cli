@@ -1,24 +1,22 @@
----
-title: "network connect"
-description: "The network connect command description and usage"
-keywords: "network, connect, user-defined"
----
-
 # network connect
 
-```markdown
-Usage:  docker network connect [OPTIONS] NETWORK CONTAINER
-
+<!---MARKER_GEN_START-->
 Connect a container to a network
 
-Options:
-      --alias value           Add network-scoped alias for the container (default [])
-      --help                  Print usage
-      --ip string             IPv4 address (e.g., 172.30.100.104)
-      --ip6 string            IPv6 address (e.g., 2001:db8::33)
-      --link value            Add link to another container (default [])
-      --link-local-ip value   Add a link-local address for the container (default [])
-```
+### Options
+
+| Name                | Type          | Default | Description                                                                             |
+|:--------------------|:--------------|:--------|:----------------------------------------------------------------------------------------|
+| [`--alias`](#alias) | `stringSlice` |         | Add network-scoped alias for the container                                              |
+| `--driver-opt`      | `stringSlice` |         | driver options for the network                                                          |
+| `--gw-priority`     | `int`         | `0`     | Highest gw-priority provides the default gateway. Accepts positive and negative values. |
+| [`--ip`](#ip)       | `ip`          | `<nil>` | IPv4 address (e.g., `172.30.100.104`)                                                   |
+| `--ip6`             | `ip`          | `<nil>` | IPv6 address (e.g., `2001:db8::33`)                                                     |
+| [`--link`](#link)   | `list`        |         | Add link to another container                                                           |
+| `--link-local-ip`   | `ipSlice`     |         | Add a link-local address for the container                                              |
+
+
+<!---MARKER_GEN_END-->
 
 ## Description
 
@@ -43,7 +41,7 @@ container and immediately connect it to a network.
 $ docker run -itd --network=multi-host-network busybox
 ```
 
-### <a name=ip></a> Specify the IP address a container will use on a given network (--ip)
+### <a name="ip"></a> Specify the IP address a container will use on a given network (--ip)
 
 You can specify the IP address you want to be assigned to the container's interface.
 
@@ -51,15 +49,15 @@ You can specify the IP address you want to be assigned to the container's interf
 $ docker network connect --ip 10.10.36.122 multi-host-network container2
 ```
 
-### <a name=link></a> Use the legacy `--link` option (--link)
+### <a name="link"></a> Use the legacy `--link` option (--link)
 
-You can use `--link` option to link another container with a preferred alias
+You can use `--link` option to link another container with a preferred alias.
 
 ```console
 $ docker network connect --link container1:c1 multi-host-network container2
 ```
 
-### <a name=alias></a> Create a network alias for a container (--alias)
+### <a name="alias"></a> Create a network alias for a container (--alias)
 
 `--alias` option can be used to resolve the container by another name in the network
 being connected to.
@@ -67,6 +65,25 @@ being connected to.
 ```console
 $ docker network connect --alias db --alias mysql multi-host-network container2
 ```
+
+### <a name="sysctl"></a> Set sysctls for a container's interface (--driver-opt)
+
+`sysctl` settings that start with `net.ipv4.` and `net.ipv6.` can be set per-interface
+using `--driver-opt` label `com.docker.network.endpoint.sysctls`. The name of the
+interface must be replaced by `IFNAME`.
+
+To set more than one `sysctl` for an interface, quote the whole value of the
+`driver-opt` field, remembering to escape the quotes for the shell if necessary.
+For example, if the interface to `my-net` is given name `eth3`, the following example
+sets `net.ipv4.conf.eth3.log_martians=1` and `net.ipv4.conf.eth3.forwarding=0`.
+
+```console
+$ docker network connect --driver-opt=\"com.docker.network.endpoint.sysctls=net.ipv4.conf.IFNAME.log_martians=1,net.ipv4.conf.IFNAME.forwarding=0\" multi-host-network container2
+```
+
+> [!NOTE]
+> Network drivers may restrict the sysctl settings that can be modified and, to protect
+> the operation of the network, new restrictions may be added in the future.
 
 ### Network implications of stopping, pausing, or restarting containers
 

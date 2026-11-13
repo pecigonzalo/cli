@@ -2,15 +2,24 @@ package network
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 
 	"github.com/docker/cli/internal/test"
-	"github.com/docker/docker/errdefs"
-	"github.com/pkg/errors"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
+
+type forBiddenErr struct{ error }
+
+func (forBiddenErr) Forbidden() {}
+
+type notFoundErr struct{ error }
+
+func (notFoundErr) NotFound() {}
 
 func TestNetworkRemoveForce(t *testing.T) {
 	tests := []struct {
@@ -62,15 +71,14 @@ func TestNetworkRemoveForce(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.doc, func(t *testing.T) {
 			fakeCli := test.NewFakeCli(&fakeClient{
 				networkRemoveFunc: func(ctx context.Context, networkID string) error {
 					switch networkID {
 					case "no-such-network":
-						return errdefs.NotFound(errors.New("no such network: no-such-network"))
+						return notFoundErr{errors.New("no such network: no-such-network")}
 					case "in-use-network":
-						return errdefs.Forbidden(errors.New("network is in use"))
+						return forBiddenErr{errors.New("network is in use")}
 					case "existing-network":
 						return nil
 					default:
@@ -89,9 +97,35 @@ func TestNetworkRemoveForce(t *testing.T) {
 				assert.NilError(t, err)
 			} else {
 				assert.Check(t, is.Contains(fakeCli.ErrBuffer().String(), tc.expectedErr))
-				assert.ErrorContains(t, err, "Code: 1")
-
+				assert.ErrorContains(t, err, "exit status 1")
 			}
 		})
 	}
+}
+
+func TestNetworkRemovePromptTermination(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cli := test.NewFakeCli(&fakeClient{
+		networkRemoveFunc: func(ctx context.Context, networkID string) error {
+			return errors.New("fakeClient networkRemoveFunc should not be called")
+		},
+		networkInspectFunc: func(ctx context.Context, networkID string, options client.NetworkInspectOptions) (client.NetworkInspectResult, error) {
+			return client.NetworkInspectResult{
+				Network: network.Inspect{
+					Network: network.Network{
+						ID:      "existing-network",
+						Name:    "existing-network",
+						Ingress: true,
+					},
+				},
+			}, nil
+		},
+	})
+	cmd := newRemoveCommand(cli)
+	cmd.SetArgs([]string{"existing-network"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	test.TerminatePrompt(ctx, t, cmd, cli)
 }

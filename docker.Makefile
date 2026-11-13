@@ -8,19 +8,20 @@
 DOCKER_CLI_MOUNTS ?= -v "$(CURDIR)":/go/src/github.com/docker/cli
 DOCKER_CLI_CONTAINER_NAME ?=
 DOCKER_CLI_GO_BUILD_CACHE ?= y
+DOCKER_SOCK ?= $(or $(patsubst unix://%,%,$(filter unix://%,$(shell docker context inspect --format '{{.Endpoints.docker.Host}}'))),/var/run/docker.sock)
 
 # Sets the name of the company that produced the windows binary.
 PACKAGER_NAME ?=
 
 DEV_DOCKER_IMAGE_NAME = docker-cli-dev$(IMAGE_TAG)
 E2E_IMAGE_NAME = docker-cli-e2e
-E2E_ENGINE_VERSION ?=
+ENGINE_VERSION ?=
 CACHE_VOLUME_NAME := docker-cli-dev-cache
 ifeq ($(DOCKER_CLI_GO_BUILD_CACHE),y)
 DOCKER_CLI_MOUNTS += -v "$(CACHE_VOLUME_NAME):/root/.cache/go-build"
 endif
-VERSION = $(shell cat VERSION)
-ENVVARS = -e VERSION=$(VERSION) -e GITCOMMIT -e PLATFORM -e TESTFLAGS -e TESTDIRS -e GOOS -e GOARCH -e GOARM -e TEST_ENGINE_VERSION=$(E2E_ENGINE_VERSION)
+VERSION ?= $(shell cat VERSION)-dev
+ENVVARS = -e VERSION=$(VERSION) -e GITCOMMIT -e PLATFORM -e TESTFLAGS -e TESTDIRS -e GOOS -e GOARCH -e GOARM -e ENGINE_VERSION
 
 # Some Dockerfiles use features that are only supported with BuildKit enabled
 export DOCKER_BUILDKIT=1
@@ -62,7 +63,7 @@ dynbinary: ## build dynamically linked binary
 .PHONY: dev
 dev: build_docker_image ## start a build container in interactive mode for in-container development
 	$(DOCKER_RUN) -it \
-		--mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+		--mount 'type=bind,src=$(DOCKER_SOCK),dst=/var/run/docker.sock' \
 		$(DEV_DOCKER_IMAGE_NAME)
 
 shell: dev ## alias for dev
@@ -76,7 +77,7 @@ shellcheck: ## run shellcheck validation
 	docker buildx bake shellcheck
 
 .PHONY: fmt
-fmt: ## run gofmt
+fmt: ## run gofumpt
 	$(DOCKER_RUN) $(DEV_DOCKER_IMAGE_NAME) make fmt
 
 .PHONY: vendor
@@ -103,9 +104,13 @@ authors: ## generate AUTHORS file from git history
 manpages: build_docker_image ## generate man pages from go source and markdown
 	$(DOCKER_RUN) -it $(DEV_DOCKER_IMAGE_NAME) make manpages
 
+.PHONY: mddocs
+mddocs: build_docker_image ## generate markdown files from go source
+	$(DOCKER_RUN) -it $(DEV_DOCKER_IMAGE_NAME) make mddocs
+
 .PHONY: yamldocs
 yamldocs: build_docker_image ## generate documentation YAML files consumed by docs repo
-	$(DOCKER_RUN) -it $(DEV_DOCKER_IMAGE_NAME) make yamldocs
+	$(DOCKER_RUN) $(DEV_DOCKER_IMAGE_NAME) make yamldocs
 
 .PHONY: test ## run unit and e2e tests
 test: test-unit test-e2e
@@ -124,27 +129,20 @@ build-e2e-image:
 	IMAGE_NAME=$(E2E_IMAGE_NAME) VERSION=$(VERSION) docker buildx bake e2e-image
 
 .PHONY: test-e2e
-test-e2e: test-e2e-non-experimental test-e2e-experimental test-e2e-connhelper-ssh ## run all e2e tests
+test-e2e: test-e2e-local test-e2e-connhelper-ssh ## run all e2e tests
 
-.PHONY: test-e2e-experimental
-test-e2e-experimental: build-e2e-image # run experimental e2e tests
-	docker run --rm $(ENVVARS) -e DOCKERD_EXPERIMENTAL=1 -e TEST_ENGINE_VERSION=$(E2E_ENGINE_VERSION) \
+.PHONY: test-e2e-local
+test-e2e-local: build-e2e-image # run experimental e2e tests
+	docker run --rm $(ENVVARS) \
 		--mount type=bind,src=$(CURDIR)/build/coverage,dst=/tmp/coverage \
-		--mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
-		$(E2E_IMAGE_NAME)
-
-.PHONY: test-e2e-non-experimental
-test-e2e-non-experimental: build-e2e-image # run non-experimental e2e tests
-	docker run --rm $(ENVVARS) -e TEST_ENGINE_VERSION=$(E2E_ENGINE_VERSION) \
-		--mount type=bind,src=$(CURDIR)/build/coverage,dst=/tmp/coverage \
-		--mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+		--mount 'type=bind,src=$(DOCKER_SOCK),dst=/var/run/docker.sock' \
 		$(E2E_IMAGE_NAME)
 
 .PHONY: test-e2e-connhelper-ssh
 test-e2e-connhelper-ssh: build-e2e-image # run experimental SSH-connection helper e2e tests
-	docker run --rm $(ENVVARS) -e DOCKERD_EXPERIMENTAL=1 -e TEST_ENGINE_VERSION=$(E2E_ENGINE_VERSION) -e TEST_CONNHELPER=ssh \
+	docker run --rm $(ENVVARS) -e TEST_CONNHELPER=ssh \
 		--mount type=bind,src=$(CURDIR)/build/coverage,dst=/tmp/coverage \
-		--mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+		--mount 'type=bind,src=$(DOCKER_SOCK),dst=/var/run/docker.sock' \
 		$(E2E_IMAGE_NAME)
 
 .PHONY: help

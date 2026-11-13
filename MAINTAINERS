@@ -24,7 +24,6 @@
 		people = [
 			"albers",
 			"cpuguy83",
-			"ndeloof",
 			"rumpl",
 			"silvin-lubecki",
 			"stevvooe",
@@ -49,8 +48,9 @@
 
 		people = [
 			"bsousaa",
+			"neersighted",
 			"programmerq",
-			"thajeztah",
+			"sam-thibault",
 			"vvoland"
 		]
 
@@ -97,10 +97,10 @@
 	Email = "dnephin@gmail.com"
 	GitHub = "dnephin"
 
-	[people.ndeloof]
-	Name = "Nicolas De Loof"
-	Email = "nicolas.deloof@gmail.com"
-	GitHub = "ndeloof"
+	[people.neersighted]
+	Name = "Bjorn Neergaard"
+	Email = "bneergaard@mirantis.com"
+	GitHub = "neersighted"
 
 	[people.programmerq]
 	Name = "Jeff Anderson"
@@ -111,6 +111,11 @@
 	Name = "Djordje Lukic"
 	Email = "djordje.lukic@docker.com"
 	GitHub = "rumpl"
+
+	[people.sam-thibault]
+	Name = "Sam Thibault"
+	Email = "sam.thibault@docker.com"
+	GitHub = "sam-thibault"
 
 	[people.silvin-lubecki]
 	Name = "Silvin Lubecki"

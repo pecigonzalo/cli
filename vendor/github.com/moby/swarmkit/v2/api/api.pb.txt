@@ -22,7 +22,7 @@ file {
     java_package: "com.google.protobuf"
     java_outer_classname: "TimestampProto"
     java_multiple_files: true
-    go_package: "github.com/golang/protobuf/ptypes/timestamp"
+    go_package: "google.golang.org/protobuf/types/known/timestamppb"
     cc_enable_arenas: true
     objc_class_prefix: "GPB"
     csharp_namespace: "Google.Protobuf.WellKnownTypes"
@@ -53,7 +53,7 @@ file {
     java_package: "com.google.protobuf"
     java_outer_classname: "DurationProto"
     java_multiple_files: true
-    go_package: "github.com/golang/protobuf/ptypes/duration"
+    go_package: "google.golang.org/protobuf/types/known/durationpb"
     cc_enable_arenas: true
     objc_class_prefix: "GPB"
     csharp_namespace: "Google.Protobuf.WellKnownTypes"
@@ -157,7 +157,7 @@ file {
     java_package: "com.google.protobuf"
     java_outer_classname: "WrappersProto"
     java_multiple_files: true
-    go_package: "github.com/golang/protobuf/ptypes/wrappers"
+    go_package: "google.golang.org/protobuf/types/known/wrapperspb"
     cc_enable_arenas: true
     objc_class_prefix: "GPB"
     csharp_namespace: "Google.Protobuf.WellKnownTypes"
@@ -483,6 +483,13 @@ file {
       type: TYPE_MESSAGE
       type_name: ".google.protobuf.FieldOptions"
       json_name: "options"
+    }
+    field {
+      name: "proto3_optional"
+      number: 17
+      label: LABEL_OPTIONAL
+      type: TYPE_BOOL
+      json_name: "proto3Optional"
     }
     enum_type {
       name: "Type"
@@ -853,7 +860,7 @@ file {
       number: 31
       label: LABEL_OPTIONAL
       type: TYPE_BOOL
-      default_value: "false"
+      default_value: "true"
       json_name: "ccEnableArenas"
     }
     field {
@@ -1405,7 +1412,7 @@ file {
     java_package: "com.google.protobuf"
     java_outer_classname: "DescriptorProtos"
     optimize_for: SPEED
-    go_package: "github.com/golang/protobuf/protoc-gen-go/descriptor;descriptor"
+    go_package: "google.golang.org/protobuf/types/descriptorpb"
     cc_enable_arenas: true
     objc_class_prefix: "GPB"
     csharp_namespace: "Google.Protobuf.Reflection"
@@ -2621,6 +2628,36 @@ file {
         }
         json_name: "nonrecursive"
       }
+      field {
+        name: "createmountpoint"
+        number: 3
+        label: LABEL_OPTIONAL
+        type: TYPE_BOOL
+        options {
+          65004: "CreateMountpoint"
+        }
+        json_name: "createmountpoint"
+      }
+      field {
+        name: "readonlynonrecursive"
+        number: 4
+        label: LABEL_OPTIONAL
+        type: TYPE_BOOL
+        options {
+          65004: "ReadOnlyNonRecursive"
+        }
+        json_name: "readonlynonrecursive"
+      }
+      field {
+        name: "readonlyforcerecursive"
+        number: 5
+        label: LABEL_OPTIONAL
+        type: TYPE_BOOL
+        options {
+          65004: "ReadOnlyForceRecursive"
+        }
+        json_name: "readonlyforcerecursive"
+      }
       enum_type {
         name: "Propagation"
         value {
@@ -2699,6 +2736,16 @@ file {
         type_name: ".docker.swarmkit.v1.Driver"
         json_name: "driverConfig"
       }
+      field {
+        name: "subpath"
+        number: 4
+        label: LABEL_OPTIONAL
+        type: TYPE_STRING
+        options {
+          65004: "Subpath"
+        }
+        json_name: "subpath"
+      }
       nested_type {
         name: "LabelsEntry"
         field {
@@ -2735,8 +2782,8 @@ file {
         label: LABEL_OPTIONAL
         type: TYPE_UINT32
         options {
-          65001: 0
           65003: "os.FileMode"
+          65001: 0
         }
         json_name: "mode"
       }
@@ -2904,8 +2951,8 @@ file {
       type: TYPE_MESSAGE
       type_name: ".google.protobuf.Duration"
       options {
-        65001: 0
         65011: 1
+        65001: 0
       }
       json_name: "delay"
     }
@@ -3348,8 +3395,8 @@ file {
         }
       }
       options {
-        62001: 0
         62023: "PublishMode"
+        62001: 0
       }
     }
   }
@@ -4055,8 +4102,8 @@ file {
       label: LABEL_OPTIONAL
       type: TYPE_UINT32
       options {
-        65001: 0
         65003: "os.FileMode"
+        65001: 0
       }
       json_name: "mode"
     }
@@ -4182,6 +4229,14 @@ file {
       type_name: ".google.protobuf.Duration"
       json_name: "startPeriod"
     }
+    field {
+      name: "start_interval"
+      number: 6
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".google.protobuf.Duration"
+      json_name: "startInterval"
+    }
   }
   message_type {
     name: "MaybeEncryptedRecord"
@@ -4286,6 +4341,29 @@ file {
       }
       json_name: "selinuxContext"
     }
+    field {
+      name: "seccomp"
+      number: 3
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".docker.swarmkit.v1.Privileges.SeccompOpts"
+      json_name: "seccomp"
+    }
+    field {
+      name: "apparmor"
+      number: 4
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".docker.swarmkit.v1.Privileges.AppArmorOpts"
+      json_name: "apparmor"
+    }
+    field {
+      name: "no_new_privileges"
+      number: 5
+      label: LABEL_OPTIONAL
+      type: TYPE_BOOL
+      json_name: "noNewPrivileges"
+    }
     nested_type {
       name: "CredentialSpec"
       field {
@@ -4352,6 +4430,61 @@ file {
         label: LABEL_OPTIONAL
         type: TYPE_STRING
         json_name: "level"
+      }
+    }
+    nested_type {
+      name: "SeccompOpts"
+      field {
+        name: "mode"
+        number: 1
+        label: LABEL_OPTIONAL
+        type: TYPE_ENUM
+        type_name: ".docker.swarmkit.v1.Privileges.SeccompOpts.SeccompMode"
+        json_name: "mode"
+      }
+      field {
+        name: "profile"
+        number: 2
+        label: LABEL_OPTIONAL
+        type: TYPE_BYTES
+        json_name: "profile"
+      }
+      enum_type {
+        name: "SeccompMode"
+        value {
+          name: "DEFAULT"
+          number: 0
+        }
+        value {
+          name: "UNCONFINED"
+          number: 1
+        }
+        value {
+          name: "CUSTOM"
+          number: 2
+        }
+      }
+    }
+    nested_type {
+      name: "AppArmorOpts"
+      field {
+        name: "mode"
+        number: 1
+        label: LABEL_OPTIONAL
+        type: TYPE_ENUM
+        type_name: ".docker.swarmkit.v1.Privileges.AppArmorOpts.AppArmorMode"
+        json_name: "mode"
+      }
+      enum_type {
+        name: "AppArmorMode"
+        value {
+          name: "DEFAULT"
+          number: 0
+        }
+        value {
+          name: "DISABLED"
+          number: 1
+        }
       }
     }
   }
@@ -5052,8 +5185,8 @@ file {
       }
     }
     options {
-      62001: 0
       62023: "NodeRole"
+      62001: 0
     }
   }
   syntax: "proto3"
@@ -5082,7 +5215,7 @@ file {
     java_package: "com.google.protobuf"
     java_outer_classname: "AnyProto"
     java_multiple_files: true
-    go_package: "github.com/golang/protobuf/ptypes/any"
+    go_package: "google.golang.org/protobuf/types/known/anypb"
     objc_class_prefix: "GPB"
     csharp_namespace: "Google.Protobuf.WellKnownTypes"
   }
@@ -5676,6 +5809,13 @@ file {
       type: TYPE_MESSAGE
       type_name: ".docker.swarmkit.v1.ContainerSpec.Ulimit"
       json_name: "ulimits"
+    }
+    field {
+      name: "oom_score_adj"
+      number: 30
+      label: LABEL_OPTIONAL
+      type: TYPE_INT64
+      json_name: "oomScoreAdj"
     }
     nested_type {
       name: "LabelsEntry"
@@ -7082,6 +7222,14 @@ file {
       type: TYPE_BOOL
       json_name: "pendingDelete"
     }
+    field {
+      name: "extra"
+      number: 7
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".google.protobuf.Any"
+      json_name: "extra"
+    }
     options {
       70001 {
         1 {
@@ -8163,6 +8311,14 @@ file {
       type: TYPE_STRING
       json_name: "networkId"
     }
+    field {
+      name: "appdata"
+      number: 3
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".google.protobuf.Any"
+      json_name: "appdata"
+    }
   }
   message_type {
     name: "GetNetworkResponse"
@@ -8204,6 +8360,14 @@ file {
       type: TYPE_MESSAGE
       type_name: ".docker.swarmkit.v1.ListNetworksRequest.Filters"
       json_name: "filters"
+    }
+    field {
+      name: "appdata"
+      number: 2
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".google.protobuf.Any"
+      json_name: "appdata"
     }
     nested_type {
       name: "Filters"
@@ -9739,8 +9903,8 @@ file {
       type: TYPE_MESSAGE
       type_name: ".google.protobuf.Duration"
       options {
-        65001: 0
         65011: 1
+        65001: 0
       }
       json_name: "period"
     }
@@ -10433,7 +10597,7 @@ file {
   syntax: "proto3"
 }
 file {
-  name: "go.etcd.io/etcd/raft/v3/raftpb/raft.proto"
+  name: "go.etcd.io/raft/v3/raftpb/raft.proto"
   package: "raftpb"
   dependency: "gogoproto/gogo.proto"
   message_type {
@@ -10617,13 +10781,23 @@ file {
       json_name: "commit"
     }
     field {
+      name: "vote"
+      number: 13
+      label: LABEL_OPTIONAL
+      type: TYPE_UINT64
+      options {
+        65001: 0
+      }
+      json_name: "vote"
+    }
+    field {
       name: "snapshot"
       number: 9
       label: LABEL_OPTIONAL
       type: TYPE_MESSAGE
       type_name: ".raftpb.Snapshot"
       options {
-        65001: 0
+        65001: 1
       }
       json_name: "snapshot"
     }
@@ -10652,7 +10826,21 @@ file {
       number: 12
       label: LABEL_OPTIONAL
       type: TYPE_BYTES
+      options {
+        65001: 1
+      }
       json_name: "context"
+    }
+    field {
+      name: "responses"
+      number: 14
+      label: LABEL_REPEATED
+      type: TYPE_MESSAGE
+      type_name: ".raftpb.Message"
+      options {
+        65001: 0
+      }
+      json_name: "responses"
     }
   }
   message_type {
@@ -10922,6 +11110,26 @@ file {
       name: "MsgPreVoteResp"
       number: 18
     }
+    value {
+      name: "MsgStorageAppend"
+      number: 19
+    }
+    value {
+      name: "MsgStorageAppendResp"
+      number: 20
+    }
+    value {
+      name: "MsgStorageApply"
+      number: 21
+    }
+    value {
+      name: "MsgStorageApplyResp"
+      number: 22
+    }
+    value {
+      name: "MsgForgetLeader"
+      number: 23
+    }
   }
   enum_type {
     name: "ConfChangeTransition"
@@ -10958,14 +11166,14 @@ file {
     }
   }
   options {
+    63017: 1
+    63020: 1
+    63018: 1
     63001: 0
     63002: 0
-    63017: 1
-    63018: 1
-    63020: 1
+    63035: 0
     63026: 0
     63034: 0
-    63035: 0
   }
 }
 file {
@@ -10973,7 +11181,7 @@ file {
   package: "docker.swarmkit.v1"
   dependency: "github.com/docker/swarmkit/api/objects.proto"
   dependency: "github.com/docker/swarmkit/api/types.proto"
-  dependency: "go.etcd.io/etcd/raft/v3/raftpb/raft.proto"
+  dependency: "go.etcd.io/raft/v3/raftpb/raft.proto"
   dependency: "gogoproto/gogo.proto"
   dependency: "github.com/docker/swarmkit/protobuf/plugin/plugin.proto"
   message_type {

@@ -1,16 +1,20 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package volume
 
 import (
 	"context"
-	"sort"
+	"slices"
 
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
-	"github.com/docker/cli/cli/command/completion"
 	"github.com/docker/cli/cli/command/formatter"
 	flagsHelper "github.com/docker/cli/cli/flags"
 	"github.com/docker/cli/opts"
 	"github.com/fvbommel/sortorder"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +29,7 @@ type listOptions struct {
 	filter  opts.FilterOpt
 }
 
-func newListCommand(dockerCli command.Cli) *cobra.Command {
+func newListCommand(dockerCLI command.Cli) *cobra.Command {
 	options := listOptions{filter: opts.NewFilterOpt()}
 
 	cmd := &cobra.Command{
@@ -34,33 +38,34 @@ func newListCommand(dockerCli command.Cli) *cobra.Command {
 		Short:   "List volumes",
 		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(dockerCli, options)
+			return runList(cmd.Context(), dockerCLI, options)
 		},
-		ValidArgsFunction: completion.NoComplete,
+		ValidArgsFunction:     cobra.NoFileCompletions,
+		DisableFlagsInUseLine: true,
 	}
 
 	flags := cmd.Flags()
 	flags.BoolVarP(&options.quiet, "quiet", "q", false, "Only display volume names")
 	flags.StringVar(&options.format, "format", "", flagsHelper.FormatHelp)
-	flags.VarP(&options.filter, "filter", "f", "Provide filter values (e.g. 'dangling=true')")
+	flags.VarP(&options.filter, "filter", "f", `Provide filter values (e.g. "dangling=true")`)
 	flags.BoolVar(&options.cluster, "cluster", false, "Display only cluster volumes, and use cluster volume list formatting")
-	flags.SetAnnotation("cluster", "version", []string{"1.42"})
-	flags.SetAnnotation("cluster", "swarm", []string{"manager"})
+	_ = flags.SetAnnotation("cluster", "version", []string{"1.42"})
+	_ = flags.SetAnnotation("cluster", "swarm", []string{"manager"})
 
 	return cmd
 }
 
-func runList(dockerCli command.Cli, options listOptions) error {
-	client := dockerCli.Client()
-	volumes, err := client.VolumeList(context.Background(), options.filter.Value())
+func runList(ctx context.Context, dockerCLI command.Cli, options listOptions) error {
+	apiClient := dockerCLI.Client()
+	res, err := apiClient.VolumeList(ctx, client.VolumeListOptions{Filters: options.filter.Value()})
 	if err != nil {
 		return err
 	}
 
 	format := options.format
 	if len(format) == 0 && !options.cluster {
-		if len(dockerCli.ConfigFile().VolumesFormat) > 0 && !options.quiet {
-			format = dockerCli.ConfigFile().VolumesFormat
+		if len(dockerCLI.ConfigFile().VolumesFormat) > 0 && !options.quiet {
+			format = dockerCLI.ConfigFile().VolumesFormat
 		} else {
 			format = formatter.TableFormatKey
 		}
@@ -70,13 +75,13 @@ func runList(dockerCli command.Cli, options listOptions) error {
 
 		// trick for filtering in place
 		n := 0
-		for _, volume := range volumes.Volumes {
-			if volume.ClusterVolume != nil {
-				volumes.Volumes[n] = volume
+		for _, vol := range res.Items {
+			if vol.ClusterVolume != nil {
+				res.Items[n] = vol
 				n++
 			}
 		}
-		volumes.Volumes = volumes.Volumes[:n]
+		res.Items = res.Items[:n]
 		if !options.quiet {
 			format = clusterTableFormat
 		} else {
@@ -84,13 +89,13 @@ func runList(dockerCli command.Cli, options listOptions) error {
 		}
 	}
 
-	sort.Slice(volumes.Volumes, func(i, j int) bool {
-		return sortorder.NaturalLess(volumes.Volumes[i].Name, volumes.Volumes[j].Name)
+	slices.SortFunc(res.Items, func(a, b volume.Volume) int {
+		return sortorder.NaturalCompare(a.Name, b.Name)
 	})
 
 	volumeCtx := formatter.Context{
-		Output: dockerCli.Out(),
+		Output: dockerCLI.Out(),
 		Format: formatter.NewVolumeFormat(format, options.quiet),
 	}
-	return formatter.VolumeWrite(volumeCtx, volumes.Volumes)
+	return formatter.VolumeWrite(volumeCtx, res.Items)
 }

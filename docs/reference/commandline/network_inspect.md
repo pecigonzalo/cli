@@ -1,24 +1,17 @@
----
-title: "network inspect"
-description: "The network inspect command description and usage"
-keywords: "network, inspect, user-defined"
----
-
 # network inspect
 
-```markdown
-Usage:  docker network inspect [OPTIONS] NETWORK [NETWORK...]
-
+<!---MARKER_GEN_START-->
 Display detailed information on one or more networks
 
-Options:
-  -f, --format string   Format output using a custom template:
-                        'json':             Print in JSON format
-                        'TEMPLATE':         Print output using the given Go template.
-                        Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates
-  -v, --verbose         Verbose output for diagnostics
-      --help            Print usage
-```
+### Options
+
+| Name                                      | Type     | Default | Description                                                                                                                                                                                                                                                        |
+|:------------------------------------------|:---------|:--------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `-f`, `--format`                          | `string` |         | Format output using a custom template:<br>'json':             Print in JSON format<br>'TEMPLATE':         Print output using the given Go template.<br>Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates |
+| [`-v`](#verbose), [`--verbose`](#verbose) | `bool`   |         | Verbose output for diagnostics                                                                                                                                                                                                                                     |
+
+
+<!---MARKER_GEN_END-->
 
 ## Description
 
@@ -48,7 +41,7 @@ node are shown.
 
 You can specify an alternate format to execute a given
 template for each result. Go's
-[text/template](https://golang.org/pkg/text/template/) package describes all the
+[text/template](https://pkg.go.dev/text/template) package describes all the
 details of the format.
 
 ```console
@@ -208,7 +201,7 @@ The output is in JSON format, for example:
 ]
 ```
 
-### <a name=verbose></a> View detailed information of a network (--verbose)
+### <a name="verbose"></a> View detailed information of a network (--verbose)
 
 `docker network inspect --verbose` for swarm mode overlay networks shows service-specific
 details such as the service's VIP and port mappings. It also shows IPs of service tasks,

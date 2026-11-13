@@ -6,14 +6,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/flags"
-	"github.com/docker/docker/errdefs"
-	"github.com/docker/docker/pkg/homedir"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
@@ -23,9 +23,8 @@ func TestUse(t *testing.T) {
 	configFilePath := filepath.Join(configDir, "config.json")
 	testCfg := configfile.New(configFilePath)
 	cli := makeFakeCli(t, withCliConfig(testCfg))
-	err := RunCreate(cli, &CreateOptions{
-		Name:   "test",
-		Docker: map[string]string{},
+	err := runCreate(cli, "test", createOptions{
+		endpoint: map[string]string{},
 	})
 	assert.NilError(t, err)
 	assert.NilError(t, newUseCommand(cli).RunE(nil, []string{"test"}))
@@ -57,7 +56,11 @@ func TestUseDefaultWithoutConfigFile(t *testing.T) {
 	// the _default_ configuration file. If we specify a custom configuration
 	// file, the CLI produces an error if the file doesn't exist.
 	tmpHomeDir := t.TempDir()
-	t.Setenv(homedir.Key(), tmpHomeDir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpHomeDir)
+	} else {
+		t.Setenv("HOME", tmpHomeDir)
+	}
 	configDir := filepath.Join(tmpHomeDir, ".docker")
 	configFilePath := filepath.Join(configDir, "config.json")
 
@@ -85,9 +88,8 @@ func TestUseHostOverride(t *testing.T) {
 	configFilePath := filepath.Join(configDir, "config.json")
 	testCfg := configfile.New(configFilePath)
 	cli := makeFakeCli(t, withCliConfig(testCfg))
-	err := RunCreate(cli, &CreateOptions{
-		Name:   "test",
-		Docker: map[string]string{},
+	err := runCreate(cli, "test", createOptions{
+		endpoint: map[string]string{},
 	})
 	assert.NilError(t, err)
 
@@ -132,9 +134,8 @@ func TestUseHostOverrideEmpty(t *testing.T) {
 		assert.NilError(t, cli.Initialize(flags.NewClientOptions()))
 	}
 	loadCli()
-	err := RunCreate(cli, &CreateOptions{
-		Name:   "test",
-		Docker: map[string]string{"host": socketPath},
+	err := runCreate(cli, "test", createOptions{
+		endpoint: map[string]string{"host": socketPath},
 	})
 	assert.NilError(t, err)
 

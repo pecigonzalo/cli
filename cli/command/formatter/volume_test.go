@@ -1,3 +1,6 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package formatter
 
 import (
@@ -8,14 +11,13 @@ import (
 	"testing"
 
 	"github.com/docker/cli/internal/test"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/pkg/stringid"
+	"github.com/moby/moby/api/types/volume"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestVolumeContext(t *testing.T) {
-	volumeName := stringid.GenerateRandomID()
+	volumeName := test.RandomID()
 
 	var ctx volumeContext
 	cases := []struct {
@@ -46,9 +48,7 @@ func TestVolumeContext(t *testing.T) {
 	for _, c := range cases {
 		ctx = c.volumeCtx
 		v := c.call()
-		if strings.Contains(v, ",") {
-			test.CompareMultipleValues(t, v, c.expValue)
-		} else if v != c.expValue {
+		if v != c.expValue {
 			t.Fatalf("Expected %s, was %s\n", c.expValue, v)
 		}
 	}
@@ -122,13 +122,12 @@ foobar_bar
 		},
 	}
 
-	volumes := []*volume.Volume{
+	volumes := []volume.Volume{
 		{Name: "foobar_baz", Driver: "foo"},
 		{Name: "foobar_bar", Driver: "bar"},
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(string(tc.context.Format), func(t *testing.T) {
 			var out bytes.Buffer
 			tc.context.Output = &out
@@ -143,11 +142,11 @@ foobar_bar
 }
 
 func TestVolumeContextWriteJSON(t *testing.T) {
-	volumes := []*volume.Volume{
+	volumes := []volume.Volume{
 		{Driver: "foo", Name: "foobar_baz"},
 		{Driver: "bar", Name: "foobar_bar"},
 	}
-	expectedJSONs := []map[string]interface{}{
+	expectedJSONs := []map[string]any{
 		{"Availability": "N/A", "Driver": "foo", "Group": "N/A", "Labels": "", "Links": "N/A", "Mountpoint": "", "Name": "foobar_baz", "Scope": "", "Size": "N/A", "Status": "N/A"},
 		{"Availability": "N/A", "Driver": "bar", "Group": "N/A", "Labels": "", "Links": "N/A", "Mountpoint": "", "Name": "foobar_bar", "Scope": "", "Size": "N/A", "Status": "N/A"},
 	}
@@ -158,7 +157,7 @@ func TestVolumeContextWriteJSON(t *testing.T) {
 	}
 	for i, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
 		msg := fmt.Sprintf("Output: line %d: %s", i, line)
-		var m map[string]interface{}
+		var m map[string]any
 		err := json.Unmarshal([]byte(line), &m)
 		assert.NilError(t, err, msg)
 		assert.Check(t, is.DeepEqual(expectedJSONs[i], m), msg)
@@ -166,7 +165,7 @@ func TestVolumeContextWriteJSON(t *testing.T) {
 }
 
 func TestVolumeContextWriteJSONField(t *testing.T) {
-	volumes := []*volume.Volume{
+	volumes := []volume.Volume{
 		{Driver: "foo", Name: "foobar_baz"},
 		{Driver: "bar", Name: "foobar_bar"},
 	}

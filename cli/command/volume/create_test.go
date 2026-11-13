@@ -1,15 +1,20 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package volume
 
 import (
+	"errors"
+	"fmt"
 	"io"
-	"reflect"
-	"sort"
+	"maps"
 	"strings"
 	"testing"
 
 	"github.com/docker/cli/internal/test"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/pkg/errors"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
@@ -18,7 +23,7 @@ func TestVolumeCreateErrors(t *testing.T) {
 	testCases := []struct {
 		args             []string
 		flags            map[string]string
-		volumeCreateFunc func(volume.CreateOptions) (volume.Volume, error)
+		volumeCreateFunc func(client.VolumeCreateOptions) (client.VolumeCreateResult, error)
 		expectedError    string
 	}{
 		{
@@ -26,15 +31,15 @@ func TestVolumeCreateErrors(t *testing.T) {
 			flags: map[string]string{
 				"name": "volumeName",
 			},
-			expectedError: "conflicting options: either specify --name or provide positional arg, not both",
+			expectedError: "conflicting options: cannot specify a volume-name through both --name and as a positional arg",
 		},
 		{
 			args:          []string{"too", "many"},
 			expectedError: "requires at most 1 argument",
 		},
 		{
-			volumeCreateFunc: func(createBody volume.CreateOptions) (volume.Volume, error) {
-				return volume.Volume{}, errors.Errorf("error creating volume")
+			volumeCreateFunc: func(client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+				return client.VolumeCreateResult{}, errors.New("error creating volume")
 			},
 			expectedError: "error creating volume",
 		},
@@ -47,44 +52,64 @@ func TestVolumeCreateErrors(t *testing.T) {
 		)
 		cmd.SetArgs(tc.args)
 		for key, value := range tc.flags {
-			cmd.Flags().Set(key, value)
+			assert.Check(t, cmd.Flags().Set(key, value))
 		}
 		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
 		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
 	}
 }
 
 func TestVolumeCreateWithName(t *testing.T) {
-	name := "foo"
+	const name = "my-volume-name"
 	cli := test.NewFakeCli(&fakeClient{
-		volumeCreateFunc: func(body volume.CreateOptions) (volume.Volume, error) {
-			if body.Name != name {
-				return volume.Volume{}, errors.Errorf("expected name %q, got %q", name, body.Name)
+		volumeCreateFunc: func(options client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			if options.Name != name {
+				return client.VolumeCreateResult{}, fmt.Errorf("expected name %q, got %q", name, options.Name)
 			}
-			return volume.Volume{
-				Name: body.Name,
+			return client.VolumeCreateResult{
+				Volume: volume.Volume{Name: options.Name},
 			}, nil
 		},
 	})
 
 	buf := cli.OutBuffer()
+	t.Run("using-flags", func(t *testing.T) {
+		cmd := newCreateCommand(cli)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{})
+		assert.Check(t, cmd.Flags().Set("name", name))
+		assert.NilError(t, cmd.Execute())
+		assert.Check(t, is.Equal(strings.TrimSpace(buf.String()), name))
+	})
 
-	// Test by flags
-	cmd := newCreateCommand(cli)
-	cmd.Flags().Set("name", name)
-	assert.NilError(t, cmd.Execute())
-	assert.Check(t, is.Equal(name, strings.TrimSpace(buf.String())))
-
-	// Then by args
 	buf.Reset()
-	cmd = newCreateCommand(cli)
-	cmd.SetArgs([]string{name})
-	assert.NilError(t, cmd.Execute())
-	assert.Check(t, is.Equal(name, strings.TrimSpace(buf.String())))
+	t.Run("using-args", func(t *testing.T) {
+		cmd := newCreateCommand(cli)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{name})
+		assert.NilError(t, cmd.Execute())
+		assert.Check(t, is.Equal(strings.TrimSpace(buf.String()), name))
+	})
+
+	buf.Reset()
+	t.Run("using-both", func(t *testing.T) {
+		cmd := newCreateCommand(cli)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{name})
+		assert.Check(t, cmd.Flags().Set("name", name))
+		err := cmd.Execute()
+		assert.Check(t, is.Error(err, `conflicting options: cannot specify a volume-name through both --name and as a positional arg`))
+		assert.Check(t, is.Equal(strings.TrimSpace(buf.String()), ""))
+	})
 }
 
 func TestVolumeCreateWithFlags(t *testing.T) {
-	expectedDriver := "foo"
+	const name = "random-generated-name"
+	const expectedDriver = "foo-volume-driver"
 	expectedOpts := map[string]string{
 		"bar": "1",
 		"baz": "baz",
@@ -93,68 +118,80 @@ func TestVolumeCreateWithFlags(t *testing.T) {
 		"lbl1": "v1",
 		"lbl2": "v2",
 	}
-	name := "banana"
 
 	cli := test.NewFakeCli(&fakeClient{
-		volumeCreateFunc: func(body volume.CreateOptions) (volume.Volume, error) {
-			if body.Name != "" {
-				return volume.Volume{}, errors.Errorf("expected empty name, got %q", body.Name)
+		volumeCreateFunc: func(options client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			if options.Name != "" {
+				return client.VolumeCreateResult{}, fmt.Errorf("expected empty name, got %q", options.Name)
 			}
-			if body.Driver != expectedDriver {
-				return volume.Volume{}, errors.Errorf("expected driver %q, got %q", expectedDriver, body.Driver)
+			if options.Driver != expectedDriver {
+				return client.VolumeCreateResult{}, fmt.Errorf("expected driver %q, got %q", expectedDriver, options.Driver)
 			}
-			if !reflect.DeepEqual(body.DriverOpts, expectedOpts) {
-				return volume.Volume{}, errors.Errorf("expected drivers opts %v, got %v", expectedOpts, body.DriverOpts)
+			if !maps.Equal(options.DriverOpts, expectedOpts) {
+				return client.VolumeCreateResult{}, fmt.Errorf("expected drivers opts %v, got %v", expectedOpts, options.DriverOpts)
 			}
-			if !reflect.DeepEqual(body.Labels, expectedLabels) {
-				return volume.Volume{}, errors.Errorf("expected labels %v, got %v", expectedLabels, body.Labels)
+			if !maps.Equal(options.Labels, expectedLabels) {
+				return client.VolumeCreateResult{}, fmt.Errorf("expected labels %v, got %v", expectedLabels, options.Labels)
 			}
-			return volume.Volume{
-				Name: name,
+			return client.VolumeCreateResult{
+				Volume: volume.Volume{
+					Name: name,
+				},
 			}, nil
 		},
 	})
 
 	cmd := newCreateCommand(cli)
-	cmd.Flags().Set("driver", "foo")
-	cmd.Flags().Set("opt", "bar=1")
-	cmd.Flags().Set("opt", "baz=baz")
-	cmd.Flags().Set("label", "lbl1=v1")
-	cmd.Flags().Set("label", "lbl2=v2")
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{})
+	assert.Check(t, cmd.Flags().Set("driver", expectedDriver))
+	assert.Check(t, cmd.Flags().Set("opt", "bar=1"))
+	assert.Check(t, cmd.Flags().Set("opt", "baz=baz"))
+	assert.Check(t, cmd.Flags().Set("label", "lbl1=v1"))
+	assert.Check(t, cmd.Flags().Set("label", "lbl2=v2"))
 	assert.NilError(t, cmd.Execute())
-	assert.Check(t, is.Equal(name, strings.TrimSpace(cli.OutBuffer().String())))
+	assert.Check(t, is.Equal(strings.TrimSpace(cli.OutBuffer().String()), name))
 }
 
 func TestVolumeCreateCluster(t *testing.T) {
 	cli := test.NewFakeCli(&fakeClient{
-		volumeCreateFunc: func(body volume.CreateOptions) (volume.Volume, error) {
-			if body.Driver == "csi" && body.ClusterVolumeSpec == nil {
-				return volume.Volume{}, errors.New("expected ClusterVolumeSpec, but none present")
+		volumeCreateFunc: func(options client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			if options.Driver == "csi" && options.ClusterVolumeSpec == nil {
+				return client.VolumeCreateResult{}, errors.New("expected ClusterVolumeSpec, but none present")
 			}
-			if body.Driver == "notcsi" && body.ClusterVolumeSpec != nil {
-				return volume.Volume{}, errors.New("expected no ClusterVolumeSpec, but present")
+			if options.Driver == "notcsi" && options.ClusterVolumeSpec != nil {
+				return client.VolumeCreateResult{}, errors.New("expected no ClusterVolumeSpec, but present")
 			}
-			return volume.Volume{}, nil
+			return client.VolumeCreateResult{}, nil
 		},
 	})
 
-	cmd := newCreateCommand(cli)
-	cmd.Flags().Set("type", "block")
-	cmd.Flags().Set("group", "gronp")
-	cmd.Flags().Set("driver", "csi")
-	cmd.SetArgs([]string{"name"})
+	t.Run("csi-volume", func(t *testing.T) {
+		cmd := newCreateCommand(cli)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		assert.Check(t, cmd.Flags().Set("type", "block"))
+		assert.Check(t, cmd.Flags().Set("group", "gronp"))
+		assert.Check(t, cmd.Flags().Set("driver", "csi"))
+		cmd.SetArgs([]string{"my-csi-volume"})
 
-	assert.NilError(t, cmd.Execute())
+		assert.NilError(t, cmd.Execute())
+	})
 
-	cmd = newCreateCommand(cli)
-	cmd.Flags().Set("driver", "notcsi")
-	cmd.SetArgs([]string{"name"})
+	t.Run("non-csi-volume", func(t *testing.T) {
+		cmd := newCreateCommand(cli)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		assert.Check(t, cmd.Flags().Set("driver", "notcsi"))
+		cmd.SetArgs([]string{"my-non-csi-volume"})
 
-	assert.NilError(t, cmd.Execute())
+		assert.NilError(t, cmd.Execute())
+	})
 }
 
 func TestVolumeCreateClusterOpts(t *testing.T) {
-	expectedBody := volume.CreateOptions{
+	expectedOptions := client.VolumeCreateOptions{
 		Name:       "name",
 		Driver:     "csi",
 		DriverOpts: map[string]string{},
@@ -192,35 +229,36 @@ func TestVolumeCreateClusterOpts(t *testing.T) {
 	}
 
 	cli := test.NewFakeCli(&fakeClient{
-		volumeCreateFunc: func(body volume.CreateOptions) (volume.Volume, error) {
-			sort.SliceStable(body.ClusterVolumeSpec.Secrets, func(i, j int) bool {
-				return body.ClusterVolumeSpec.Secrets[i].Key < body.ClusterVolumeSpec.Secrets[j].Key
-			})
-			assert.DeepEqual(t, body, expectedBody)
-			return volume.Volume{}, nil
+		volumeCreateFunc: func(options client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			assert.Check(t, is.DeepEqual(options, expectedOptions, cmpopts.SortSlices(func(a, b volume.Secret) bool {
+				return a.Key < b.Key
+			})))
+			return client.VolumeCreateResult{}, nil
 		},
 	})
 
 	cmd := newCreateCommand(cli)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{"name"})
-	cmd.Flags().Set("driver", "csi")
-	cmd.Flags().Set("group", "gronp")
-	cmd.Flags().Set("scope", "multi")
-	cmd.Flags().Set("sharing", "onewriter")
-	cmd.Flags().Set("type", "mount")
-	cmd.Flags().Set("sharing", "onewriter")
-	cmd.Flags().Set("required-bytes", "1234")
-	cmd.Flags().Set("limit-bytes", "567890")
+	assert.Check(t, cmd.Flags().Set("driver", "csi"))
+	assert.Check(t, cmd.Flags().Set("group", "gronp"))
+	assert.Check(t, cmd.Flags().Set("scope", "multi"))
+	assert.Check(t, cmd.Flags().Set("sharing", "onewriter"))
+	assert.Check(t, cmd.Flags().Set("type", "mount"))
+	assert.Check(t, cmd.Flags().Set("sharing", "onewriter"))
+	assert.Check(t, cmd.Flags().Set("required-bytes", "1234"))
+	assert.Check(t, cmd.Flags().Set("limit-bytes", "567890"))
 
-	cmd.Flags().Set("secret", "key1=secret1")
-	cmd.Flags().Set("secret", "key2=secret2")
+	assert.Check(t, cmd.Flags().Set("secret", "key1=secret1"))
+	assert.Check(t, cmd.Flags().Set("secret", "key2=secret2"))
 
-	cmd.Flags().Set("topology-required", "region=R1,zone=Z1")
-	cmd.Flags().Set("topology-required", "region=R1,zone=Z2")
-	cmd.Flags().Set("topology-required", "region=R1,zone=Z3")
+	assert.Check(t, cmd.Flags().Set("topology-required", "region=R1,zone=Z1"))
+	assert.Check(t, cmd.Flags().Set("topology-required", "region=R1,zone=Z2"))
+	assert.Check(t, cmd.Flags().Set("topology-required", "region=R1,zone=Z3"))
 
-	cmd.Flags().Set("topology-preferred", "region=R1,zone=Z2")
-	cmd.Flags().Set("topology-preferred", "region=R1,zone=Z3")
+	assert.Check(t, cmd.Flags().Set("topology-preferred", "region=R1,zone=Z2"))
+	assert.Check(t, cmd.Flags().Set("topology-preferred", "region=R1,zone=Z3"))
 
-	cmd.Execute()
+	assert.NilError(t, cmd.Execute())
 }

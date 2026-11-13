@@ -1,7 +1,11 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,10 +13,10 @@ import (
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/command/completion"
-	"github.com/docker/docker/api/types"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/moby/sys/signal"
 	"github.com/moby/term"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -27,13 +31,8 @@ type StartOptions struct {
 	Containers []string
 }
 
-// NewStartOptions creates a new StartOptions
-func NewStartOptions() StartOptions {
-	return StartOptions{}
-}
-
-// NewStartCommand creates a new cobra.Command for `docker start`
-func NewStartCommand(dockerCli command.Cli) *cobra.Command {
+// newStartCommand creates a new cobra.Command for "docker container start".
+func newStartCommand(dockerCLI command.Cli) *cobra.Command {
 	var opts StartOptions
 
 	cmd := &cobra.Command{
@@ -42,14 +41,15 @@ func NewStartCommand(dockerCli command.Cli) *cobra.Command {
 		Args:  cli.RequiresMinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Containers = args
-			return RunStart(dockerCli, &opts)
+			return RunStart(cmd.Context(), dockerCLI, &opts)
 		},
 		Annotations: map[string]string{
 			"aliases": "docker container start, docker start",
 		},
-		ValidArgsFunction: completion.ContainerNames(dockerCli, true, func(container types.Container) bool {
-			return container.State == "exited" || container.State == "created"
+		ValidArgsFunction: completion.ContainerNames(dockerCLI, true, func(ctr container.Summary) bool {
+			return ctr.State == container.StateExited || ctr.State == container.StateCreated
 		}),
+		DisableFlagsInUseLine: true,
 	}
 
 	flags := cmd.Flags()
@@ -69,11 +69,20 @@ func NewStartCommand(dockerCli command.Cli) *cobra.Command {
 // RunStart executes a `start` command
 //
 //nolint:gocyclo
-func RunStart(dockerCli command.Cli, opts *StartOptions) error {
-	ctx, cancelFun := context.WithCancel(context.Background())
+func RunStart(ctx context.Context, dockerCli command.Cli, opts *StartOptions) error {
+	ctx, cancelFun := context.WithCancel(ctx)
 	defer cancelFun()
 
-	if opts.Attach || opts.OpenStdin {
+	detachKeys := opts.DetachKeys
+	if detachKeys == "" {
+		detachKeys = dockerCli.ConfigFile().DetachKeys
+	}
+	if err := validateDetachKeys(detachKeys); err != nil {
+		return err
+	}
+
+	switch {
+	case opts.Attach || opts.OpenStdin:
 		// We're going to attach to a container.
 		// 1. Ensure we only have one container.
 		if len(opts.Containers) > 1 {
@@ -81,29 +90,26 @@ func RunStart(dockerCli command.Cli, opts *StartOptions) error {
 		}
 
 		// 2. Attach to the container.
-		container := opts.Containers[0]
-		c, err := dockerCli.Client().ContainerInspect(ctx, container)
+		ctr := opts.Containers[0]
+		c, err := dockerCli.Client().ContainerInspect(ctx, ctr, client.ContainerInspectOptions{})
 		if err != nil {
 			return err
 		}
 
 		// We always use c.ID instead of container to maintain consistency during `docker start`
-		if !c.Config.Tty {
+		if !c.Container.Config.Tty {
 			sigc := notifyAllSignals()
-			go ForwardAllSignals(ctx, dockerCli, c.ID, sigc)
+			bgCtx := context.WithoutCancel(ctx)
+			go ForwardAllSignals(bgCtx, dockerCli.Client(), c.Container.ID, sigc)
 			defer signal.StopCatch(sigc)
 		}
 
-		if opts.DetachKeys != "" {
-			dockerCli.ConfigFile().DetachKeys = opts.DetachKeys
-		}
-
-		options := types.ContainerAttachOptions{
+		options := client.ContainerAttachOptions{
 			Stream:     true,
-			Stdin:      opts.OpenStdin && c.Config.OpenStdin,
+			Stdin:      opts.OpenStdin && c.Container.Config.OpenStdin,
 			Stdout:     true,
 			Stderr:     true,
-			DetachKeys: dockerCli.ConfigFile().DetachKeys,
+			DetachKeys: detachKeys,
 		}
 
 		var in io.ReadCloser
@@ -112,11 +118,11 @@ func RunStart(dockerCli command.Cli, opts *StartOptions) error {
 			in = dockerCli.In()
 		}
 
-		resp, errAttach := dockerCli.Client().ContainerAttach(ctx, c.ID, options)
+		resp, errAttach := dockerCli.Client().ContainerAttach(ctx, c.Container.ID, options)
 		if errAttach != nil {
 			return errAttach
 		}
-		defer resp.Close()
+		defer resp.HijackedResponse.Close()
 
 		cErr := make(chan error, 1)
 
@@ -127,8 +133,8 @@ func RunStart(dockerCli command.Cli, opts *StartOptions) error {
 					inputStream:  in,
 					outputStream: dockerCli.Out(),
 					errorStream:  dockerCli.Err(),
-					resp:         resp,
-					tty:          c.Config.Tty,
+					resp:         resp.HijackedResponse,
+					tty:          c.Container.Config.Tty,
 					detachKeys:   options.DetachKeys,
 				}
 
@@ -142,17 +148,17 @@ func RunStart(dockerCli command.Cli, opts *StartOptions) error {
 
 		// 3. We should open a channel for receiving status code of the container
 		// no matter it's detached, removed on daemon side(--rm) or exit normally.
-		statusChan := waitExitOrRemoved(ctx, dockerCli, c.ID, c.HostConfig.AutoRemove)
-		startOptions := types.ContainerStartOptions{
-			CheckpointID:  opts.Checkpoint,
-			CheckpointDir: opts.CheckpointDir,
-		}
+		statusChan := waitExitOrRemoved(ctx, dockerCli.Client(), c.Container.ID, c.Container.HostConfig.AutoRemove)
 
 		// 4. Start the container.
-		if err := dockerCli.Client().ContainerStart(ctx, c.ID, startOptions); err != nil {
+		_, err = dockerCli.Client().ContainerStart(ctx, c.Container.ID, client.ContainerStartOptions{
+			CheckpointID:  opts.Checkpoint,
+			CheckpointDir: opts.CheckpointDir,
+		})
+		if err != nil {
 			cancelFun()
 			<-cErr
-			if c.HostConfig.AutoRemove {
+			if c.Container.HostConfig.AutoRemove {
 				// wait container to be removed
 				<-statusChan
 			}
@@ -160,13 +166,13 @@ func RunStart(dockerCli command.Cli, opts *StartOptions) error {
 		}
 
 		// 5. Wait for attachment to break.
-		if c.Config.Tty && dockerCli.Out().IsTerminal() {
-			if err := MonitorTtySize(ctx, dockerCli, c.ID, false); err != nil {
-				fmt.Fprintln(dockerCli.Err(), "Error monitoring TTY size:", err)
+		if c.Container.Config.Tty && dockerCli.Out().IsTerminal() {
+			if err := MonitorTtySize(ctx, dockerCli, c.Container.ID, false); err != nil {
+				_, _ = fmt.Fprintln(dockerCli.Err(), "Error monitoring TTY size:", err)
 			}
 		}
 		if attachErr := <-cErr; attachErr != nil {
-			if _, ok := attachErr.(term.EscapeError); ok {
+			if _, ok := errors.AsType[term.EscapeError](attachErr); ok {
 				// The user entered the detach escape sequence.
 				return nil
 			}
@@ -176,39 +182,37 @@ func RunStart(dockerCli command.Cli, opts *StartOptions) error {
 		if status := <-statusChan; status != 0 {
 			return cli.StatusError{StatusCode: status}
 		}
-	} else if opts.Checkpoint != "" {
+		return nil
+	case opts.Checkpoint != "":
 		if len(opts.Containers) > 1 {
 			return errors.New("you cannot restore multiple containers at once")
 		}
-		container := opts.Containers[0]
-		startOptions := types.ContainerStartOptions{
+		ctr := opts.Containers[0]
+		_, err := dockerCli.Client().ContainerStart(ctx, ctr, client.ContainerStartOptions{
 			CheckpointID:  opts.Checkpoint,
 			CheckpointDir: opts.CheckpointDir,
-		}
-		return dockerCli.Client().ContainerStart(ctx, container, startOptions)
-
-	} else {
+		})
+		return err
+	default:
 		// We're not going to attach to anything.
 		// Start as many containers as we want.
 		return startContainersWithoutAttachments(ctx, dockerCli, opts.Containers)
 	}
-
-	return nil
 }
 
 func startContainersWithoutAttachments(ctx context.Context, dockerCli command.Cli, containers []string) error {
 	var failedContainers []string
-	for _, container := range containers {
-		if err := dockerCli.Client().ContainerStart(ctx, container, types.ContainerStartOptions{}); err != nil {
-			fmt.Fprintln(dockerCli.Err(), err)
-			failedContainers = append(failedContainers, container)
+	for _, ctr := range containers {
+		if _, err := dockerCli.Client().ContainerStart(ctx, ctr, client.ContainerStartOptions{}); err != nil {
+			_, _ = fmt.Fprintln(dockerCli.Err(), err)
+			failedContainers = append(failedContainers, ctr)
 			continue
 		}
-		fmt.Fprintln(dockerCli.Out(), container)
+		_, _ = fmt.Fprintln(dockerCli.Out(), ctr)
 	}
 
 	if len(failedContainers) > 0 {
-		return errors.Errorf("Error: failed to start containers: %s", strings.Join(failedContainers, ", "))
+		return fmt.Errorf("failed to start containers: %s", strings.Join(failedContainers, ", "))
 	}
 	return nil
 }

@@ -1,17 +1,21 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package volume
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
-	"github.com/docker/cli/cli/command/completion"
 	"github.com/docker/cli/opts"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/pkg/errors"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -36,7 +40,7 @@ type createOptions struct {
 	preferredTopology opts.ListOpts
 }
 
-func newCreateCommand(dockerCli command.Cli) *cobra.Command {
+func newCreateCommand(dockerCLI command.Cli) *cobra.Command {
 	options := createOptions{
 		driverOpts:        *opts.NewMapOpts(nil, nil),
 		labels:            opts.NewListOpts(opts.ValidateLabel),
@@ -52,14 +56,15 @@ func newCreateCommand(dockerCli command.Cli) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
 				if options.name != "" {
-					return errors.Errorf("conflicting options: either specify --name or provide positional arg, not both")
+					return errors.New("conflicting options: cannot specify a volume-name through both --name and as a positional arg")
 				}
 				options.name = args[0]
 			}
 			options.cluster = hasClusterVolumeOptionSet(cmd.Flags())
-			return runCreate(dockerCli, options)
+			return runCreate(cmd.Context(), dockerCLI, options)
 		},
-		ValidArgsFunction: completion.NoComplete,
+		ValidArgsFunction:     cobra.NoFileCompletions,
+		DisableFlagsInUseLine: true,
 	}
 	flags := cmd.Flags()
 	flags.StringVarP(&options.driver, "driver", "d", "local", "Specify volume driver name")
@@ -72,16 +77,16 @@ func newCreateCommand(dockerCli command.Cli) *cobra.Command {
 	flags.StringVar(&options.group, "group", "", "Cluster Volume group (cluster volumes)")
 	flags.SetAnnotation("group", "version", []string{"1.42"})
 	flags.SetAnnotation("group", "swarm", []string{"manager"})
-	flags.StringVar(&options.scope, "scope", "single", `Cluster Volume access scope ("single"|"multi")`)
+	flags.StringVar(&options.scope, "scope", "single", `Cluster Volume access scope ("single", "multi")`)
 	flags.SetAnnotation("scope", "version", []string{"1.42"})
 	flags.SetAnnotation("scope", "swarm", []string{"manager"})
-	flags.StringVar(&options.sharing, "sharing", "none", `Cluster Volume access sharing ("none"|"readonly"|"onewriter"|"all")`)
+	flags.StringVar(&options.sharing, "sharing", "none", `Cluster Volume access sharing ("none", "readonly", "onewriter", "all")`)
 	flags.SetAnnotation("sharing", "version", []string{"1.42"})
 	flags.SetAnnotation("sharing", "swarm", []string{"manager"})
-	flags.StringVar(&options.availability, "availability", "active", `Cluster Volume availability ("active"|"pause"|"drain")`)
+	flags.StringVar(&options.availability, "availability", "active", `Cluster Volume availability ("active", "pause", "drain")`)
 	flags.SetAnnotation("availability", "version", []string{"1.42"})
 	flags.SetAnnotation("availability", "swarm", []string{"manager"})
-	flags.StringVar(&options.accessType, "type", "block", `Cluster Volume access type ("mount"|"block")`)
+	flags.StringVar(&options.accessType, "type", "block", `Cluster Volume access type ("mount", "block")`)
 	flags.SetAnnotation("type", "version", []string{"1.42"})
 	flags.SetAnnotation("type", "swarm", []string{"manager"})
 	flags.Var(&options.secrets, "secret", "Cluster Volume secrets")
@@ -112,93 +117,69 @@ func hasClusterVolumeOptionSet(flags *pflag.FlagSet) bool {
 		flags.Changed("limit-bytes") || flags.Changed("required-bytes")
 }
 
-func runCreate(dockerCli command.Cli, options createOptions) error {
-	volOpts := volume.CreateOptions{
-		Driver:     options.driver,
-		DriverOpts: options.driverOpts.GetAll(),
-		Name:       options.name,
-		Labels:     opts.ConvertKVStringsToMap(options.labels.GetAll()),
-	}
-	if options.cluster {
-		volOpts.ClusterVolumeSpec = &volume.ClusterVolumeSpec{
-			Group: options.group,
-			AccessMode: &volume.AccessMode{
-				Scope:   volume.Scope(options.scope),
-				Sharing: volume.SharingMode(options.sharing),
-			},
-			Availability: volume.Availability(options.availability),
-		}
-
-		if options.accessType == "mount" {
-			volOpts.ClusterVolumeSpec.AccessMode.MountVolume = &volume.TypeMount{}
-		} else if options.accessType == "block" {
-			volOpts.ClusterVolumeSpec.AccessMode.BlockVolume = &volume.TypeBlock{}
-		}
-
-		vcr := &volume.CapacityRange{}
-		if r := options.requiredBytes.Value(); r >= 0 {
-			vcr.RequiredBytes = r
-		}
-
-		if l := options.limitBytes.Value(); l >= 0 {
-			vcr.LimitBytes = l
-		}
-		volOpts.ClusterVolumeSpec.CapacityRange = vcr
-
-		for key, secret := range options.secrets.GetAll() {
-			volOpts.ClusterVolumeSpec.Secrets = append(
-				volOpts.ClusterVolumeSpec.Secrets,
-				volume.Secret{
-					Key:    key,
-					Secret: secret,
-				},
-			)
-		}
-		sort.SliceStable(volOpts.ClusterVolumeSpec.Secrets, func(i, j int) bool {
-			return volOpts.ClusterVolumeSpec.Secrets[i].Key < volOpts.ClusterVolumeSpec.Secrets[j].Key
-		})
-
-		// TODO(dperny): ignore if no topology specified
-		topology := &volume.TopologyRequirement{}
-		for _, top := range options.requisiteTopology.GetAll() {
-			// each topology takes the form segment=value,segment=value
-			// comma-separated list of equal separated maps
-			segments := map[string]string{}
-			for _, segment := range strings.Split(top, ",") {
-				parts := strings.SplitN(segment, "=", 2)
-				// TODO(dperny): validate topology syntax
-				segments[parts[0]] = parts[1]
-			}
-			topology.Requisite = append(
-				topology.Requisite,
-				volume.Topology{Segments: segments},
-			)
-		}
-
-		for _, top := range options.preferredTopology.GetAll() {
-			// each topology takes the form segment=value,segment=value
-			// comma-separated list of equal separated maps
-			segments := map[string]string{}
-			for _, segment := range strings.Split(top, ",") {
-				parts := strings.SplitN(segment, "=", 2)
-				// TODO(dperny): validate topology syntax
-				segments[parts[0]] = parts[1]
-			}
-
-			topology.Preferred = append(
-				topology.Preferred,
-				volume.Topology{Segments: segments},
-			)
-		}
-
-		volOpts.ClusterVolumeSpec.AccessibilityRequirements = topology
-	}
-
-	vol, err := dockerCli.Client().VolumeCreate(context.Background(), volOpts)
+func runCreate(ctx context.Context, dockerCli command.Cli, options createOptions) error {
+	res, err := dockerCli.Client().VolumeCreate(ctx, client.VolumeCreateOptions{
+		Driver:            options.driver,
+		DriverOpts:        options.driverOpts.GetAll(),
+		Name:              options.name,
+		Labels:            opts.ConvertKVStringsToMap(options.labels.GetSlice()),
+		ClusterVolumeSpec: clusterVolumeSpec(options),
+	})
 	if err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintln(dockerCli.Out(), vol.Name)
+	_, _ = fmt.Fprintln(dockerCli.Out(), res.Volume.Name)
 	return nil
+}
+
+func clusterVolumeSpec(options createOptions) *volume.ClusterVolumeSpec {
+	if !options.cluster {
+		return nil
+	}
+
+	var secrets []volume.Secret
+	for key, secret := range options.secrets.GetAll() {
+		secrets = append(secrets, volume.Secret{Key: key, Secret: secret})
+	}
+	slices.SortFunc(secrets, func(a, b volume.Secret) int {
+		return cmp.Compare(a.Key, b.Key)
+	})
+
+	accessMode := &volume.AccessMode{
+		Scope:   volume.Scope(options.scope),
+		Sharing: volume.SharingMode(options.sharing),
+	}
+	switch options.accessType {
+	case "mount":
+		accessMode.MountVolume = &volume.TypeMount{}
+	case "block":
+		accessMode.BlockVolume = &volume.TypeBlock{}
+	}
+
+	return &volume.ClusterVolumeSpec{
+		Group:      options.group,
+		AccessMode: accessMode,
+		AccessibilityRequirements: &volume.TopologyRequirement{
+			Requisite: parseTopologies(options.requisiteTopology.GetSlice()),
+			Preferred: parseTopologies(options.preferredTopology.GetSlice()),
+		},
+		CapacityRange: &volume.CapacityRange{
+			RequiredBytes: max(options.requiredBytes.Value(), 0),
+			LimitBytes:    max(options.limitBytes.Value(), 0),
+		},
+		Secrets:      secrets,
+		Availability: volume.Availability(options.availability),
+	}
+}
+
+func parseTopologies(values []string) []volume.Topology {
+	topologies := make([]volume.Topology, 0, len(values))
+	for _, top := range values {
+		// TODO(dperny): validate topology syntax
+		topologies = append(topologies, volume.Topology{
+			Segments: opts.ConvertKVStringsToMap(strings.Split(top, ",")),
+		})
+	}
+	return topologies
 }

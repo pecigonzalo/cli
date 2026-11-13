@@ -1,33 +1,19 @@
----
-title: "stop"
-description: "The stop command description and usage"
-keywords: "stop, SIGKILL, SIGTERM"
----
+# docker stop
 
-# stop
-
-```markdown
-Usage:  docker stop [OPTIONS] CONTAINER [CONTAINER...]
-
+<!---MARKER_GEN_START-->
 Stop one or more running containers
 
-Aliases:
-  docker container stop, docker stop
+### Aliases
 
-Options:
-  -s, --signal string   Signal to send to the container
-  -t, --time int        Seconds to wait before killing the container
-```
+`docker container stop`, `docker stop`
 
-## Description
+### Options
 
-The main process inside the container will receive `SIGTERM`, and after a grace
-period, `SIGKILL`. The first signal can be changed with the `STOPSIGNAL`
-instruction in the container's Dockerfile, or the `--stop-signal` option to
-`docker run`.
+| Name              | Type     | Default | Description                                  |
+|:------------------|:---------|:--------|:---------------------------------------------|
+| `-s`, `--signal`  | `string` |         | Signal to send to the container              |
+| `-t`, `--timeout` | `int`    | `0`     | Seconds to wait before killing the container |
 
-## Examples
 
-```console
-$ docker stop my_container
-```
+<!---MARKER_GEN_END-->
+

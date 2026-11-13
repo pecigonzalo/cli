@@ -14,14 +14,13 @@ import (
 	is "gotest.tools/v3/assert/cmp"
 	"gotest.tools/v3/fs"
 	"gotest.tools/v3/icmd"
-	"gotest.tools/v3/skip"
 )
 
 func TestBuildFromContextDirectoryWithTag(t *testing.T) {
 	t.Setenv("DOCKER_BUILDKIT", "0")
 
 	dir := fs.NewDir(t, "test-build-context-dir",
-		fs.WithFile("run", "echo running", fs.WithMode(0755)),
+		fs.WithFile("run", "echo running", fs.WithMode(0o755)),
 		fs.WithDir("data", fs.WithFile("one", "1111")),
 		fs.WithFile("Dockerfile", fmt.Sprintf(`
 	FROM %s
@@ -36,88 +35,34 @@ func TestBuildFromContextDirectoryWithTag(t *testing.T) {
 		withWorkingDir(dir))
 	defer icmd.RunCommand("docker", "image", "rm", "myimage")
 
-	const buildxMissingWarning = `DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
-            Install the buildx component to build images with BuildKit:
-            https://docs.docker.com/go/buildx/
+	const buildkitDisabledWarning = `DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            BuildKit is currently disabled; enable it by removing the DOCKER_BUILDKIT=0
+            environment-variable.
 `
 
-	result.Assert(t, icmd.Expected{Err: buildxMissingWarning})
+	result.Assert(t, icmd.Expected{Err: buildkitDisabledWarning})
 	output.Assert(t, result.Stdout(), map[int]func(string) error{
-		0:  output.Prefix("Sending build context to Docker daemon"),
-		1:  output.Suffix("Step 1/4 : FROM registry:5000/alpine:3.6"),
-		3:  output.Suffix("Step 2/4 : COPY run /usr/bin/run"),
-		5:  output.Suffix("Step 3/4 : RUN run"),
-		7:  output.Suffix("running"),
-		8:  output.Contains("Removing intermediate container"),
+		0: output.Prefix("Sending build context to Docker daemon"),
+		1: output.Suffix("Step 1/4 : FROM registry:5000/alpine:frozen"),
+		3: output.Suffix("Step 2/4 : COPY run /usr/bin/run"),
+		5: output.Suffix("Step 3/4 : RUN run"),
+		7: output.Suffix("running"),
+		// TODO(krissetto): ugly, remove when no longer testing against moby 24. see https://github.com/moby/moby/pull/46270
+		8: func(s string) error {
+			err := output.Contains("Removed intermediate container")(s) // moby >= v25
+			if err == nil {
+				return nil
+			}
+			return output.Contains("Removing intermediate container")(s) // moby < v25
+		},
 		10: output.Suffix("Step 4/4 : COPY data /data"),
 		12: output.Contains("Successfully built "),
 		13: output.Suffix("Successfully tagged myimage:latest"),
 	})
 }
 
-func TestTrustedBuild(t *testing.T) {
-	skip.If(t, environment.RemoteDaemon())
-	t.Setenv("DOCKER_BUILDKIT", "0")
-
-	dir := fixtures.SetupConfigFile(t)
-	defer dir.Remove()
-	image1 := fixtures.CreateMaskedTrustedRemoteImage(t, registryPrefix, "trust-build1", "latest")
-	image2 := fixtures.CreateMaskedTrustedRemoteImage(t, registryPrefix, "trust-build2", "latest")
-
-	buildDir := fs.NewDir(t, "test-trusted-build-context-dir",
-		fs.WithFile("Dockerfile", fmt.Sprintf(`
-	FROM %s as build-base
-	RUN echo ok > /foo
-	FROM %s
-	COPY --from=build-base foo bar
-		`, image1, image2)))
-	defer buildDir.Remove()
-
-	result := icmd.RunCmd(
-		icmd.Command("docker", "build", "-t", "myimage", "."),
-		withWorkingDir(buildDir),
-		fixtures.WithConfig(dir.Path()),
-		fixtures.WithTrust,
-		fixtures.WithNotary,
-	)
-
-	result.Assert(t, icmd.Expected{
-		Out: fmt.Sprintf("FROM %s@sha", image1[:len(image1)-7]),
-		Err: fmt.Sprintf("Tagging %s@sha", image1[:len(image1)-7]),
-	})
-	result.Assert(t, icmd.Expected{
-		Out: fmt.Sprintf("FROM %s@sha", image2[:len(image2)-7]),
-	})
-}
-
-func TestTrustedBuildUntrustedImage(t *testing.T) {
-	skip.If(t, environment.RemoteDaemon())
-	t.Setenv("DOCKER_BUILDKIT", "0")
-
-	dir := fixtures.SetupConfigFile(t)
-	defer dir.Remove()
-	buildDir := fs.NewDir(t, "test-trusted-build-context-dir",
-		fs.WithFile("Dockerfile", fmt.Sprintf(`
-	FROM %s
-	RUN []
-		`, fixtures.AlpineImage)))
-	defer buildDir.Remove()
-
-	result := icmd.RunCmd(
-		icmd.Command("docker", "build", "-t", "myimage", "."),
-		withWorkingDir(buildDir),
-		fixtures.WithConfig(dir.Path()),
-		fixtures.WithTrust,
-		fixtures.WithNotary,
-	)
-
-	result.Assert(t, icmd.Expected{
-		ExitCode: 1,
-		Err:      "does not have trust data for",
-	})
-}
-
 func TestBuildIidFileSquash(t *testing.T) {
+	t.Skip("Not implemented with containerd")
 	environment.SkipIfNotExperimentalDaemon(t)
 	t.Setenv("DOCKER_BUILDKIT", "0")
 

@@ -1,29 +1,26 @@
----
-title: "stack rm"
-description: "The stack rm command description and usage"
-keywords: "stack, rm, remove, down"
----
-
 # stack rm
 
-```markdown
-Usage:  docker stack rm [OPTIONS] STACK [STACK...]
-
+<!---MARKER_GEN_START-->
 Remove one or more stacks
 
-Aliases:
-  rm, remove, down
+### Aliases
 
-Options:
-      --help                  Print usage
-```
+`docker stack rm`, `docker stack remove`, `docker stack down`
+
+### Options
+
+| Name             | Type   | Default | Description                   |
+|:-----------------|:-------|:--------|:------------------------------|
+| `-d`, `--detach` | `bool` | `true`  | Do not wait for stack removal |
+
+
+<!---MARKER_GEN_END-->
 
 ## Description
 
 Remove the stack from the swarm.
 
-> **Note**
->
+> [!NOTE]
 > This is a cluster management command, and must be executed on a swarm
 > manager node. To learn about managers and workers, refer to the
 > [Swarm mode section](https://docs.docker.com/engine/swarm/) in the

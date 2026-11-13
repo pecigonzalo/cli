@@ -1,8 +1,12 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package command
 
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 
 	"github.com/docker/cli/cli/context/store"
 )
@@ -10,26 +14,24 @@ import (
 // DockerContext is a typed representation of what we put in Context metadata
 type DockerContext struct {
 	Description      string
-	AdditionalFields map[string]interface{}
+	AdditionalFields map[string]any
 }
 
 // MarshalJSON implements custom JSON marshalling
 func (dc DockerContext) MarshalJSON() ([]byte, error) {
-	s := map[string]interface{}{}
+	s := map[string]any{}
 	if dc.Description != "" {
 		s["Description"] = dc.Description
 	}
 	if dc.AdditionalFields != nil {
-		for k, v := range dc.AdditionalFields {
-			s[k] = v
-		}
+		maps.Copy(s, dc.AdditionalFields)
 	}
 	return json.Marshal(s)
 }
 
 // UnmarshalJSON implements custom JSON marshalling
 func (dc *DockerContext) UnmarshalJSON(payload []byte) error {
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal(payload, &data); err != nil {
 		return err
 	}
@@ -39,7 +41,7 @@ func (dc *DockerContext) UnmarshalJSON(payload []byte) error {
 			dc.Description = v.(string)
 		default:
 			if dc.AdditionalFields == nil {
-				dc.AdditionalFields = make(map[string]interface{})
+				dc.AdditionalFields = make(map[string]any)
 			}
 			dc.AdditionalFields[k] = v
 		}
@@ -57,6 +59,9 @@ func GetDockerContext(storeMetadata store.Metadata) (DockerContext, error) {
 	res, ok := storeMetadata.Metadata.(DockerContext)
 	if !ok {
 		return DockerContext{}, errors.New("context metadata is not a valid DockerContext")
+	}
+	if storeMetadata.Name == DefaultContextName {
+		res.Description = "Current DOCKER_HOST based configuration"
 	}
 	return res, nil
 }

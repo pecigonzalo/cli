@@ -6,37 +6,39 @@ import (
 
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/context/store"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
 
-func newUseCommand(dockerCli command.Cli) *cobra.Command {
+func newUseCommand(dockerCLI command.Cli) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "use CONTEXT",
-		Short: "Set the current docker context",
+		Short: "Set the default docker context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			return RunUse(dockerCli, name)
+			return runUse(dockerCLI, name)
 		},
+		ValidArgsFunction:     completeContextNames(dockerCLI, 1, false),
+		DisableFlagsInUseLine: true,
 	}
 	return cmd
 }
 
-// RunUse set the current Docker context
-func RunUse(dockerCli command.Cli, name string) error {
+// runUse set the current Docker context
+func runUse(dockerCLI command.Cli, name string) error {
 	// configValue uses an empty string for "default"
 	var configValue string
 	if name != command.DefaultContextName {
 		if err := store.ValidateContextName(name); err != nil {
 			return err
 		}
-		if _, err := dockerCli.ContextStore().GetMetadata(name); err != nil {
+		if _, err := dockerCLI.ContextStore().GetMetadata(name); err != nil {
 			return err
 		}
 		configValue = name
 	}
-	dockerConfig := dockerCli.ConfigFile()
+	dockerConfig := dockerCLI.ConfigFile()
 	// Avoid updating the config-file if nothing changed. This also prevents
 	// creating the file and config-directory if the default is used and
 	// no config-file existed yet.
@@ -46,10 +48,10 @@ func RunUse(dockerCli command.Cli, name string) error {
 			return err
 		}
 	}
-	fmt.Fprintln(dockerCli.Out(), name)
-	fmt.Fprintf(dockerCli.Err(), "Current context is now %q\n", name)
+	_, _ = fmt.Fprintln(dockerCLI.Out(), name)
+	_, _ = fmt.Fprintf(dockerCLI.Err(), "Current context is now %q\n", name)
 	if name != command.DefaultContextName && os.Getenv(client.EnvOverrideHost) != "" {
-		fmt.Fprintf(dockerCli.Err(), "Warning: %[1]s environment variable overrides the active context. "+
+		_, _ = fmt.Fprintf(dockerCLI.Err(), "Warning: %[1]s environment variable overrides the active context. "+
 			"To use %[2]q, either set the global --context flag, or unset %[1]s environment variable.\n", client.EnvOverrideHost, name)
 	}
 	return nil

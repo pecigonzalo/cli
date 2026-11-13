@@ -1,17 +1,18 @@
 package builders
 
 import (
+	"net/netip"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/moby/moby/api/types/container"
 )
 
 // Container creates a container with default values.
 // Any number of container function builder can be passed to augment it.
-func Container(name string, builders ...func(container *types.Container)) *types.Container {
+func Container(name string, builders ...func(c *container.Summary)) *container.Summary {
 	// now := time.Now()
 	// onehourago := now.Add(-120 * time.Minute)
-	container := &types.Container{
+	ctr := &container.Summary{
 		ID:      "container_id",
 		Names:   []string{"/" + name},
 		Command: "top",
@@ -21,15 +22,15 @@ func Container(name string, builders ...func(container *types.Container)) *types
 	}
 
 	for _, builder := range builders {
-		builder(container)
+		builder(ctr)
 	}
 
-	return container
+	return ctr
 }
 
 // WithLabel adds a label to the container
-func WithLabel(key, value string) func(*types.Container) {
-	return func(c *types.Container) {
+func WithLabel(key, value string) func(*container.Summary) {
+	return func(c *container.Summary) {
 		if c.Labels == nil {
 			c.Labels = map[string]string{}
 		}
@@ -38,21 +39,21 @@ func WithLabel(key, value string) func(*types.Container) {
 }
 
 // WithName adds a name to the container
-func WithName(name string) func(*types.Container) {
-	return func(c *types.Container) {
+func WithName(name string) func(*container.Summary) {
+	return func(c *container.Summary) {
 		c.Names = append(c.Names, "/"+name)
 	}
 }
 
 // WithPort adds a port mapping to the container
-func WithPort(privateport, publicport uint16, builders ...func(*types.Port)) func(*types.Container) {
-	return func(c *types.Container) {
+func WithPort(privatePort, publicPort uint16, builders ...func(summary *container.PortSummary)) func(*container.Summary) {
+	return func(c *container.Summary) {
 		if c.Ports == nil {
-			c.Ports = []types.Port{}
+			c.Ports = []container.PortSummary{}
 		}
-		port := &types.Port{
-			PrivatePort: privateport,
-			PublicPort:  publicport,
+		port := &container.PortSummary{
+			PrivatePort: privatePort,
+			PublicPort:  publicPort,
 		}
 		for _, builder := range builders {
 			builder(port)
@@ -62,8 +63,8 @@ func WithPort(privateport, publicport uint16, builders ...func(*types.Port)) fun
 }
 
 // WithSize adds size in bytes to the container
-func WithSize(size int64) func(*types.Container) {
-	return func(c *types.Container) {
+func WithSize(size int64) func(*container.Summary) {
+	return func(c *container.Summary) {
 		if size >= 0 {
 			c.SizeRw = size
 		}
@@ -71,18 +72,18 @@ func WithSize(size int64) func(*types.Container) {
 }
 
 // IP sets the ip of the port
-func IP(ip string) func(*types.Port) {
-	return func(p *types.Port) {
-		p.IP = ip
+func IP(ip string) func(*container.PortSummary) {
+	return func(p *container.PortSummary) {
+		p.IP = netip.MustParseAddr(ip)
 	}
 }
 
 // TCP sets the port to tcp
-func TCP(p *types.Port) {
+func TCP(p *container.PortSummary) {
 	p.Type = "tcp"
 }
 
 // UDP sets the port to udp
-func UDP(p *types.Port) {
+func UDP(p *container.PortSummary) {
 	p.Type = "udp"
 }

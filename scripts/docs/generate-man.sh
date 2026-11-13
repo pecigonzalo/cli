@@ -2,37 +2,22 @@
 
 set -eu
 
-: "${MD2MAN_VERSION=v2.0.1}"
+: "${GO_MD2MAN:=go-md2man}"
 
-export GO111MODULE=auto
-
-function clean {
-  rm -rf "$buildir"
-}
-
-buildir=$(mktemp -d -t docker-cli-docsgen.XXXXXXXXXX)
-trap clean EXIT
-
-(
-  set -x
-  cp -r . "$buildir/"
-  cd "$buildir"
-  # init dummy go.mod
-  ./scripts/vendor init
-  # install go-md2man and copy man/tools.go in root folder
-  # to be able to fetch the required dependencies
-  go mod edit -modfile=vendor.mod -require=github.com/cpuguy83/go-md2man/v2@${MD2MAN_VERSION}
-  cp man/tools.go .
-  # update vendor
-  ./scripts/vendor update
-  # build gen-manpages
-  go build -mod=vendor -modfile=vendor.mod -tags manpages -o /tmp/gen-manpages ./man/generate.go
-  # build go-md2man
-  go build -mod=vendor -modfile=vendor.mod -o /tmp/go-md2man ./vendor/github.com/cpuguy83/go-md2man/v2
-)
+if ! command -v "$GO_MD2MAN" > /dev/null; then
+  (
+    set -x
+    # note: this installs all tools defined in go.mod/vendor.mod
+    GOBIN="$(pwd)/build/tools" go install -mod=vendor tool
+  )
+  GO_MD2MAN="$(pwd)/build/tools/go-md2man"
+fi
 
 mkdir -p man/man1
-(set -x ; /tmp/gen-manpages --root "." --target "$(pwd)/man/man1")
+(
+  set -x
+  go run -mod=vendor -tags manpages ./man/generate.go --source "./man/src" --target "./man/man1"
+)
 
 (
   cd man
@@ -45,6 +30,9 @@ mkdir -p man/man1
       continue
     fi
     mkdir -p "./man${num}"
-    (set -x ; /tmp/go-md2man -in "$FILE" -out "./man${num}/${name}")
+    (
+      set -x ;
+      "$GO_MD2MAN" -in "$FILE" -out "./man${num}/${name}"
+    )
   done
 )

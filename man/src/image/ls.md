@@ -10,7 +10,7 @@ The title REPOSITORY for the first title may seem confusing. It is essentially
 the image name. However, because you can tag a specific image, and multiple tags
 (image instances) can be associated with a single name, the name is really a
 repository for all tagged images of the same name. For example consider an image
-called fedora. It may be tagged with 18, 19, or 20, etc. to manage different
+called ubuntu. It may be tagged with 26.04 or 24.04, etc. to manage different
 versions.
 
 ## Filters
@@ -86,7 +86,7 @@ Repository entries separated by a colon for all images:
 
     docker image ls --format "{{.ID}}: {{.Repository}}"
     77af4d6b9913: <none>
-    b6fa739cedf5: committ
+    b6fa739cedf5: commit
     78a85c484bad: ipbabble
     30557a29d5ab: docker
     5ed6274db6ce: <none>
@@ -100,7 +100,7 @@ To list all images with their repository and tag in a table format you can use:
     docker image ls --format "table {{.ID}}\t{{.Repository}}\t{{.Tag}}"
     IMAGE ID            REPOSITORY                TAG
     77af4d6b9913        <none>                    <none>
-    b6fa739cedf5        committ                   latest
+    b6fa739cedf5        commit                   latest
     78a85c484bad        ipbabble                  <none>
     30557a29d5ab        docker                    latest
     5ed6274db6ce        <none>                    <none>
@@ -114,9 +114,9 @@ Valid template placeholders are listed above.
 To list all images in JSON format you can use:
 
     docker image ls --format json
-    {"Containers":"N/A","CreatedAt":"2021-01-18 11:29:06 +0100 CET","CreatedSince":"24 hours ago","Digest":"\u003cnone\u003e","ID":"fbcf509fa16f","Repository":"docker","SharedSize":"N/A","Size":"235MB","Tag":"stable-dind","UniqueSize":"N/A","VirtualSize":"235.5MB"}
-    {"Containers":"N/A","CreatedAt":"2021-01-18 11:24:48 +0100 CET","CreatedSince":"24 hours ago","Digest":"\u003cnone\u003e","ID":"08656a69ab2b","Repository":"docker-cli-e2e","SharedSize":"N/A","Size":"1.21GB","Tag":"latest","UniqueSize":"N/A","VirtualSize":"1.207GB"}
-    {"Containers":"N/A","CreatedAt":"2021-01-18 10:43:44 +0100 CET","CreatedSince":"24 hours ago","Digest":"\u003cnone\u003e","ID":"abca5c07c1ba","Repository":"docker-cli-dev","SharedSize":"N/A","Size":"608MB","Tag":"latest","UniqueSize":"N/A","VirtualSize":"607.8MB"}
+    {"Containers":"N/A","CreatedAt":"2021-01-18 11:29:06 +0100 CET","CreatedSince":"24 hours ago","Digest":"\u003cnone\u003e","ID":"fbcf509fa16f","Repository":"docker","SharedSize":"N/A","Size":"235MB","Tag":"stable-dind","UniqueSize":"N/A"}
+    {"Containers":"N/A","CreatedAt":"2021-01-18 11:24:48 +0100 CET","CreatedSince":"24 hours ago","Digest":"\u003cnone\u003e","ID":"08656a69ab2b","Repository":"docker-cli-e2e","SharedSize":"N/A","Size":"1.21GB","Tag":"latest","UniqueSize":"N/A"}
+    {"Containers":"N/A","CreatedAt":"2021-01-18 10:43:44 +0100 CET","CreatedSince":"24 hours ago","Digest":"\u003cnone\u003e","ID":"abca5c07c1ba","Repository":"docker-cli-dev","SharedSize":"N/A","Size":"608MB","Tag":"latest","UniqueSize":"N/A"}
 
 ## Listing only the shortened image IDs
 

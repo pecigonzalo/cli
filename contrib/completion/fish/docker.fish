@@ -82,7 +82,6 @@ function __fish_print_docker_repositories --description 'Print a list of docker 
 end
 
 # common options
-complete -c docker -f -n '__fish_docker_no_subcommand' -l api-cors-header -d "Set CORS headers in the Engine API. Default is cors disabled"
 complete -c docker -f -n '__fish_docker_no_subcommand' -s b -l bridge -d 'Attach containers to a pre-existing network bridge'
 complete -c docker -f -n '__fish_docker_no_subcommand' -l bip -d "Use this CIDR notation address for the network bridge's IP, not compatible with -b"
 complete -c docker -f -n '__fish_docker_no_subcommand' -s D -l debug -d 'Enable debug mode'
@@ -140,7 +139,6 @@ complete -c docker -A -f -n '__fish_seen_subcommand_from build' -l cpu-quota -d 
 complete -c docker -A -f -n '__fish_seen_subcommand_from build' -s c -l cpu-shares -d 'CPU shares (relative weight)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from build' -l cpuset-cpus -d 'CPUs in which to allow execution (0-3, 0,1)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from build' -l cpuset-mems -d 'MEMs in which to allow execution (0-3, 0,1)'
-complete -c docker -A -f -n '__fish_seen_subcommand_from build' -l disable-content-trust -d 'Skip image verification'
 complete -c docker -A -f -n '__fish_seen_subcommand_from build' -s f -l file -d "Name of the Dockerfile (Default is ‘PATH/Dockerfile’)"
 complete -c docker -A -f -n '__fish_seen_subcommand_from build' -l force-rm -d 'Always remove intermediate containers'
 complete -c docker -A -f -n '__fish_seen_subcommand_from build' -l help -d 'Print usage'
@@ -172,12 +170,13 @@ complete -c docker -A -f -n '__fish_seen_subcommand_from commit' -a '(__fish_pri
 # cp
 complete -c docker -f -n '__fish_docker_no_subcommand' -a cp -d "Copy files/folders between a container and the local filesystem"
 complete -c docker -A -f -n '__fish_seen_subcommand_from cp' -s a -l archive -d 'Archive mode (copy all uid/gid information)'
-complete -c docker -A -f -n '__fish_seen_subcommand_from cp' -s L -l follow-link -d 'Always follow symbol link in SRC_PATH'
+complete -c docker -A -f -n '__fish_seen_subcommand_from cp' -s L -l follow-link -d 'Always follow symlinks in SRC_PATH'
 complete -c docker -A -f -n '__fish_seen_subcommand_from cp' -l help -d 'Print usage'
 
 # create
 complete -c docker -f -n '__fish_docker_no_subcommand' -a create -d 'Create a new container'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l add-host -d 'Add a custom host-to-IP mapping (host:ip)'
+complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l annotation -d 'Add an annotation to the container (passed through to the OCI runtime)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -s a -l attach -d 'Attach to STDIN, STDOUT or STDERR.'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l blkio-weight -d 'Block IO (relative weight), between 10 and 1000, or 0 to disable (default 0)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l blkio-weight-device -d 'Block IO weight (relative device weight)'
@@ -227,7 +226,6 @@ complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l ip -d 'IPv4 
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l ip6 -d 'IPv6 address (e.g., 2001:db8::33)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l ipc -d 'IPC mode to use'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l isolation -d 'Container isolation technology'
-complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l kernel-memory -d 'Kernel memory limit'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -s l -l label -d 'Set meta data on a container'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l label-file -d 'Read in a line delimited file of labels'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l link -d 'Add link to another container'
@@ -253,7 +251,7 @@ complete -c docker -A -f -n '__fish_seen_subcommand_from create' -s p -l publish
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -s P -l publish-all -d 'Publish all exposed ports to random ports'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l read-only -d "Mount the container's root filesystem as read only"
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l restart -d 'Restart policy to apply when a container exits'
-complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l rm -d 'Automatically remove the container when it exits'
+complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l rm -d 'Automatically remove the container and its associated anonymous volumes when it exits'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l runtime -d 'Runtime to use for this container'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l security-opt -d 'Security Options'
 complete -c docker -A -f -n '__fish_seen_subcommand_from create' -l shm-size -d 'Size of /dev/shm'
@@ -316,7 +314,7 @@ complete -c docker -A -f -n '__fish_seen_subcommand_from history' -a '(__fish_pr
 
 # images
 complete -c docker -f -n '__fish_docker_no_subcommand' -a images -d 'List images'
-complete -c docker -A -f -n '__fish_seen_subcommand_from images' -s a -l all -d 'Show all images (default hides intermediate images)'
+complete -c docker -A -f -n '__fish_seen_subcommand_from images' -s a -l all -d 'Show all images (default hides intermediate and dangling images)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from images' -l digests -d 'Show digests'
 complete -c docker -A -f -n '__fish_seen_subcommand_from images' -s f -l filter -d 'Filter output based on conditions provided'
 complete -c docker -A -f -n '__fish_seen_subcommand_from images' -l format -d 'Format the output using the given Go template'
@@ -453,6 +451,7 @@ complete -c docker -A -f -n '__fish_seen_subcommand_from rmi' -a '(__fish_print_
 
 # run
 complete -c docker -f -n '__fish_docker_no_subcommand' -a run -d 'Create and run a new container from an image'
+complete -c docker -A -f -n '__fish_seen_subcommand_from run' -l annotation -d 'Add an annotation to the container (passed through to the OCI runtime)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from run' -s a -l attach -d 'Attach to STDIN, STDOUT or STDERR.'
 complete -c docker -A -f -n '__fish_seen_subcommand_from run' -l add-host -d 'Add a custom host-to-IP mapping (host:ip)'
 complete -c docker -A -f -n '__fish_seen_subcommand_from run' -s c -l cpu-shares -d 'CPU shares (relative weight)'

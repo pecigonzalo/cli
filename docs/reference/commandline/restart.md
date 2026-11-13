@@ -1,26 +1,19 @@
----
-title: "restart"
-description: "The restart command description and usage"
-keywords: "restart, container, Docker"
----
+# docker restart
 
-# restart
-
-```markdown
-Usage:  docker restart [OPTIONS] CONTAINER [CONTAINER...]
-
+<!---MARKER_GEN_START-->
 Restart one or more containers
 
-Aliases:
-  docker container restart, docker restart
+### Aliases
 
-Options:
-  -s, --signal string   Signal to send to the container
-  -t, --time int        Seconds to wait before killing the container
-```
+`docker container restart`, `docker restart`
 
-## Examples
+### Options
 
-```console
-$ docker restart my_container
-```
+| Name              | Type     | Default | Description                                  |
+|:------------------|:---------|:--------|:---------------------------------------------|
+| `-s`, `--signal`  | `string` |         | Signal to send to the container              |
+| `-t`, `--timeout` | `int`    | `0`     | Seconds to wait before killing the container |
+
+
+<!---MARKER_GEN_END-->
+

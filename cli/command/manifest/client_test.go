@@ -3,10 +3,10 @@ package manifest
 import (
 	"context"
 
+	"github.com/distribution/reference"
 	manifesttypes "github.com/docker/cli/cli/manifest/types"
-	"github.com/docker/cli/cli/registry/client"
+	"github.com/docker/cli/internal/registryclient"
 	"github.com/docker/distribution"
-	"github.com/docker/distribution/reference"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -45,4 +45,4 @@ func (c *fakeRegistryClient) PutManifest(ctx context.Context, ref reference.Name
 	return digest.Digest(""), nil
 }
 
-var _ client.RegistryClient = &fakeRegistryClient{}
+var _ registryclient.RegistryClient = &fakeRegistryClient{}

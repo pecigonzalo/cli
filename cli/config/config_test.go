@@ -11,22 +11,13 @@ import (
 
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/config/credentials"
-	"github.com/docker/cli/cli/config/types"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
-	"gotest.tools/v3/env"
-	"gotest.tools/v3/fs"
+	"gotest.tools/v3/skip"
 )
 
-var homeKey = "HOME"
-
-func init() {
-	if runtime.GOOS == "windows" {
-		homeKey = "USERPROFILE"
-	}
-}
-
 func setupConfigDir(t *testing.T) string {
+	t.Helper()
 	tmpdir := t.TempDir()
 	oldDir := Dir()
 	SetDir(tmpdir)
@@ -59,6 +50,40 @@ func TestMissingFile(t *testing.T) {
 	saveConfigAndValidateNewFormat(t, config, tmpHome)
 }
 
+// TestLoadDanglingSymlink verifies that we gracefully handle dangling symlinks.
+//
+// TODO(thaJeztah): consider whether we want dangling symlinks to be an error condition instead.
+func TestLoadDanglingSymlink(t *testing.T) {
+	cfgDir := t.TempDir()
+	cfgFile := filepath.Join(cfgDir, ConfigFileName)
+	err := os.Symlink(filepath.Join(cfgDir, "no-such-file"), cfgFile)
+	assert.NilError(t, err)
+
+	config, err := Load(cfgDir)
+	assert.NilError(t, err)
+
+	// Now save it and make sure it shows up in new form
+	saveConfigAndValidateNewFormat(t, config, cfgDir)
+
+	// Make sure we kept the symlink.
+	fi, err := os.Lstat(cfgFile)
+	assert.NilError(t, err)
+	assert.Equal(t, fi.Mode()&os.ModeSymlink, os.ModeSymlink, "expected %v to be a symlink", cfgFile)
+}
+
+func TestLoadNoPermissions(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		skip.If(t, os.Getuid() == 0, "cannot test permission denied when running as root")
+	}
+	cfgDir := t.TempDir()
+	cfgFile := filepath.Join(cfgDir, ConfigFileName)
+	err := os.WriteFile(cfgFile, []byte(`{}`), os.FileMode(0o000))
+	assert.NilError(t, err)
+
+	_, err = Load(cfgDir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
 func TestSaveFileToDirs(t *testing.T) {
 	tmpHome := filepath.Join(t.TempDir(), ".docker")
 	config, err := Load(tmpHome)
@@ -72,7 +97,7 @@ func TestEmptyFile(t *testing.T) {
 	tmpHome := t.TempDir()
 
 	fn := filepath.Join(tmpHome, ConfigFileName)
-	err := os.WriteFile(fn, []byte(""), 0600)
+	err := os.WriteFile(fn, []byte(""), 0o600)
 	assert.NilError(t, err)
 
 	_, err = Load(tmpHome)
@@ -83,7 +108,7 @@ func TestEmptyJSON(t *testing.T) {
 	tmpHome := t.TempDir()
 
 	fn := filepath.Join(tmpHome, ConfigFileName)
-	err := os.WriteFile(fn, []byte("{}"), 0600)
+	err := os.WriteFile(fn, []byte("{}"), 0o600)
 	assert.NilError(t, err)
 
 	config, err := Load(tmpHome)
@@ -93,22 +118,15 @@ func TestEmptyJSON(t *testing.T) {
 	saveConfigAndValidateNewFormat(t, config, tmpHome)
 }
 
-func TestOldJSONFallbackDeprecationWarning(t *testing.T) {
-	js := `{"https://index.docker.io/v1/":{"auth":"am9lam9lOmhlbGxv","email":"user@example.com"}}`
-	tmpHome := fs.NewDir(t, t.Name(), fs.WithFile(oldConfigfile, js))
-	defer tmpHome.Remove()
-	env.PatchAll(t, map[string]string{homeKey: tmpHome.Path(), "DOCKER_CONFIG": ""})
+func TestMalformedJSON(t *testing.T) {
+	tmpHome := t.TempDir()
 
-	// reset the homeDir, configDir, and its sync.Once, to force them being resolved again
-	resetHomeDir()
-	resetConfigDir()
+	fn := filepath.Join(tmpHome, ConfigFileName)
+	err := os.WriteFile(fn, []byte("{"), 0o600)
+	assert.NilError(t, err)
 
-	buffer := new(bytes.Buffer)
-	configFile := LoadDefaultConfigFile(buffer)
-	expected := configfile.New(tmpHome.Join(configFileDir, ConfigFileName))
-	expected.AuthConfigs = map[string]types.AuthConfig{}
-	assert.Assert(t, strings.Contains(buffer.String(), "WARNING: Support for the legacy ~/.dockercfg configuration file and file-format has been removed and the configuration file will be ignored"))
-	assert.Check(t, is.DeepEqual(expected, configFile))
+	_, err = Load(tmpHome)
+	assert.Check(t, is.ErrorContains(err, fmt.Sprintf(`parsing config file (%s):`, fn)))
 }
 
 func TestNewJSON(t *testing.T) {
@@ -116,7 +134,7 @@ func TestNewJSON(t *testing.T) {
 
 	fn := filepath.Join(tmpHome, ConfigFileName)
 	js := ` { "auths": { "https://index.docker.io/v1/": { "auth": "am9lam9lOmhlbGxv" } } }`
-	if err := os.WriteFile(fn, []byte(js), 0600); err != nil {
+	if err := os.WriteFile(fn, []byte(js), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -148,7 +166,7 @@ func TestNewJSONNoEmail(t *testing.T) {
 
 	fn := filepath.Join(tmpHome, ConfigFileName)
 	js := ` { "auths": { "https://index.docker.io/v1/": { "auth": "am9lam9lOmhlbGxv" } } }`
-	if err := os.WriteFile(fn, []byte(js), 0600); err != nil {
+	if err := os.WriteFile(fn, []byte(js), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -183,7 +201,7 @@ func TestJSONWithPsFormat(t *testing.T) {
 		"auths": { "https://index.docker.io/v1/": { "auth": "am9lam9lOmhlbGxv", "email": "user@example.com" } },
 		"psFormat": "table {{.ID}}\\t{{.Label \"com.docker.label.cpu\"}}"
 }`
-	if err := os.WriteFile(fn, []byte(js), 0600); err != nil {
+	if err := os.WriteFile(fn, []byte(js), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,7 +228,7 @@ func TestJSONWithCredentialStore(t *testing.T) {
 		"auths": { "https://index.docker.io/v1/": { "auth": "am9lam9lOmhlbGxv", "email": "user@example.com" } },
 		"credsStore": "crazy-secure-storage"
 }`
-	if err := os.WriteFile(fn, []byte(js), 0600); err != nil {
+	if err := os.WriteFile(fn, []byte(js), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -237,7 +255,7 @@ func TestJSONWithCredentialHelpers(t *testing.T) {
 		"auths": { "https://index.docker.io/v1/": { "auth": "am9lam9lOmhlbGxv", "email": "user@example.com" } },
 		"credHelpers": { "images.io": "images-io", "containers.com": "crazy-secure-storage" }
 }`
-	if err := os.WriteFile(fn, []byte(js), 0600); err != nil {
+	if err := os.WriteFile(fn, []byte(js), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -325,7 +343,7 @@ func TestJSONSaveWithNoFile(t *testing.T) {
 	tmpHome := t.TempDir()
 
 	fn := filepath.Join(tmpHome, ConfigFileName)
-	f, _ := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, _ := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	defer f.Close()
 
 	assert.NilError(t, config.SaveToWriter(f))
@@ -350,16 +368,60 @@ func TestLoadDefaultConfigFile(t *testing.T) {
 
 	filename := filepath.Join(dir, ConfigFileName)
 	content := []byte(`{"PsFormat": "format"}`)
-	err := os.WriteFile(filename, content, 0644)
+	err := os.WriteFile(filename, content, 0o644)
 	assert.NilError(t, err)
 
-	configFile := LoadDefaultConfigFile(buffer)
-	credStore := credentials.DetectDefaultStore("")
-	expected := configfile.New(filename)
-	expected.CredentialsStore = credStore
-	expected.PsFormat = "format"
+	t.Run("success", func(t *testing.T) {
+		configFile := LoadDefaultConfigFile(buffer)
+		credStore := credentials.DetectDefaultStore("")
+		expected := configfile.New(filename)
+		expected.CredentialsStore = credStore
+		expected.PsFormat = "format"
 
-	assert.Check(t, is.DeepEqual(expected, configFile))
+		assert.Check(t, is.DeepEqual(expected, configFile))
+		assert.Check(t, is.Equal(buffer.String(), ""))
+	})
+
+	t.Run("permission error", func(t *testing.T) {
+		if runtime.GOOS != "windows" {
+			skip.If(t, os.Getuid() == 0, "cannot test permission denied when running as root")
+		}
+		err = os.Chmod(filename, 0o000)
+		assert.NilError(t, err)
+
+		buffer.Reset()
+		_ = LoadDefaultConfigFile(buffer)
+		warnings := buffer.String()
+
+		assert.Check(t, is.Contains(warnings, "WARNING:"))
+		assert.Check(t, is.Contains(warnings, os.ErrPermission.Error()))
+	})
+}
+
+// The CLI no longer disables/hides experimental CLI features, however, we need
+// to verify that existing configuration files do not break
+func TestLoadLegacyExperimental(t *testing.T) {
+	tests := []struct {
+		doc        string
+		configfile string
+	}{
+		{
+			doc:        "default",
+			configfile: `{}`,
+		},
+		{
+			doc: "experimental",
+			configfile: `{
+	"experimental": "enabled"
+}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.doc, func(t *testing.T) {
+			_, err := LoadFromReader(strings.NewReader(tc.configfile))
+			assert.NilError(t, err)
+		})
+	}
 }
 
 func TestConfigPath(t *testing.T) {
@@ -397,7 +459,6 @@ func TestConfigPath(t *testing.T) {
 			expectedErr: fmt.Sprintf("is outside of root config directory %q", "dummy"),
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			SetDir(tc.dir)
 			f, err := Path(tc.path...)
@@ -411,4 +472,13 @@ func TestConfigPath(t *testing.T) {
 	}
 
 	SetDir(oldDir)
+}
+
+// TestSetDir verifies that Dir() does not overwrite the value set through
+// SetDir() if it has not been run before.
+func TestSetDir(t *testing.T) {
+	const expected = "my_config_dir"
+	resetConfigDir()
+	SetDir(expected)
+	assert.Check(t, is.Equal(Dir(), expected))
 }

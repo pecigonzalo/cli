@@ -1,35 +1,26 @@
----
-title: "stack ls"
-description: "The stack ls command description and usage"
-keywords: "stack, ls"
----
-
 # stack ls
 
-```markdown
-Usage:  docker stack ls [OPTIONS]
-
+<!---MARKER_GEN_START-->
 List stacks
 
-Aliases:
-  ls, list
+### Aliases
 
-Options:
-      --help                  Print usage
-      --format string         Format output using a custom template:
-                              'table':            Print output in table format with column headers (default)
-                              'table TEMPLATE':   Print output in table format using the given Go template
-                              'json':             Print in JSON format
-                              'TEMPLATE':         Print output using the given Go template.
-                              Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates
-```
+`docker stack ls`, `docker stack list`
+
+### Options
+
+| Name                  | Type     | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|:----------------------|:---------|:--------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`--format`](#format) | `string` |         | Format output using a custom template:<br>'table':            Print output in table format with column headers (default)<br>'table TEMPLATE':   Print output in table format using the given Go template<br>'json':             Print in JSON format<br>'TEMPLATE':         Print output using the given Go template.<br>Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates |
+
+
+<!---MARKER_GEN_END-->
 
 ## Description
 
 Lists the stacks.
 
-> **Note**
->
+> [!NOTE]
 > This is a cluster management command, and must be executed on a swarm
 > manager node. To learn about managers and workers, refer to the
 > [Swarm mode section](https://docs.docker.com/engine/swarm/) in the
@@ -47,7 +38,7 @@ myapp              2                   Kubernetes
 vossibility-stack  6                   Swarm
 ```
 
-### <a name=format></a> Format the output (--format)
+### <a name="format"></a> Format the output (--format)
 
 The formatting option (`--format`) pretty-prints stacks using a Go template.
 

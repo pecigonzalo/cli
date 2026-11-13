@@ -1,14 +1,14 @@
 package environment
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/docker/docker/client"
-	"github.com/pkg/errors"
+	"github.com/moby/moby/client"
 	"gotest.tools/v3/icmd"
 	"gotest.tools/v3/poll"
 	"gotest.tools/v3/skip"
@@ -97,4 +97,25 @@ func SkipIfCgroupNamespacesNotSupported(t *testing.T) {
 	cgroupNsFound := strings.Contains(result.Stdout(), "name=cgroupns")
 
 	skip.If(t, !cgroupNsFound, fmt.Sprintf("running against a daemon that doesn't support cgroup namespaces (security options: %s)", result.Stdout()))
+}
+
+// SkipIfNotPlatform skips the test if the running docker daemon is not running on a specific platform.
+// platform should be in format os/arch (for example linux/arm64).
+func SkipIfNotPlatform(t *testing.T, platform string) {
+	t.Helper()
+	result := icmd.RunCmd(icmd.Command("docker", "version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"))
+	result.Assert(t, icmd.Expected{Err: icmd.None})
+	daemonPlatform := strings.TrimSpace(result.Stdout())
+	skip.If(t, daemonPlatform != platform, "running against a non %s daemon", platform)
+}
+
+// DaemonAPIVersion returns the negotiated daemon API version.
+func DaemonAPIVersion(t *testing.T) string {
+	t.Helper()
+	// Use Client.APIVersion instead of Server.APIVersion.
+	// The latter is the maximum version that the server supports
+	// while the Client.APIVersion contains the negotiated version.
+	result := icmd.RunCmd(icmd.Command("docker", "version", "--format", "{{.Client.APIVersion}}"))
+	result.Assert(t, icmd.Expected{Err: icmd.None})
+	return strings.TrimSpace(result.Stdout())
 }

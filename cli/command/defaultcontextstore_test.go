@@ -1,14 +1,17 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.26
+
 package command
 
 import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/context/docker"
 	"github.com/docker/cli/cli/context/store"
 	cliflags "github.com/docker/cli/cli/flags"
-	"github.com/docker/docker/errdefs"
 	"github.com/docker/go-connections/tlsconfig"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
@@ -23,14 +26,14 @@ type testContext struct {
 	Bar string `json:"another_very_recognizable_field_name"`
 }
 
-var testCfg = store.NewConfig(func() interface{} { return &testContext{} },
-	store.EndpointTypeGetter("ep1", func() interface{} { return &endpoint{} }),
-	store.EndpointTypeGetter("ep2", func() interface{} { return &endpoint{} }),
+var testCfg = store.NewConfig(func() any { return &testContext{} },
+	store.EndpointTypeGetter("ep1", func() any { return &endpoint{} }),
+	store.EndpointTypeGetter("ep2", func() any { return &endpoint{} }),
 )
 
 func testDefaultMetadata() store.Metadata {
 	return store.Metadata{
-		Endpoints: map[string]interface{}{
+		Endpoints: map[string]any{
 			"ep1": endpoint{Foo: "bar"},
 		},
 		Metadata: testContext{Bar: "baz"},
@@ -56,7 +59,7 @@ func TestDefaultContextInitializer(t *testing.T) {
 	assert.NilError(t, err)
 	t.Setenv("DOCKER_HOST", "ssh://someswarmserver")
 	cli.configFile = &configfile.ConfigFile{}
-	ctx, err := ResolveDefaultContext(&cliflags.CommonOptions{
+	ctx, err := resolveDefaultContext(&cliflags.ClientOptions{
 		TLS: true,
 		TLSOptions: &tlsconfig.Options{
 			CAFile: "./testdata/ca.pem",
@@ -149,13 +152,13 @@ func TestErrCreateDefault(t *testing.T) {
 	meta := testDefaultMetadata()
 	s := testStore(t, meta, store.ContextTLSData{})
 	err := s.CreateOrUpdate(store.Metadata{
-		Endpoints: map[string]interface{}{
+		Endpoints: map[string]any{
 			"ep1": endpoint{Foo: "bar"},
 		},
 		Metadata: testContext{Bar: "baz"},
 		Name:     "default",
 	})
-	assert.Check(t, is.ErrorType(err, errdefs.IsInvalidParameter))
+	assert.Check(t, is.ErrorType(err, errdefs.IsInvalidArgument))
 	assert.Error(t, err, "default context cannot be created nor updated")
 }
 
@@ -163,7 +166,7 @@ func TestErrRemoveDefault(t *testing.T) {
 	meta := testDefaultMetadata()
 	s := testStore(t, meta, store.ContextTLSData{})
 	err := s.Remove("default")
-	assert.Check(t, is.ErrorType(err, errdefs.IsInvalidParameter))
+	assert.Check(t, is.ErrorType(err, errdefs.IsInvalidArgument))
 	assert.Error(t, err, "default context cannot be removed")
 }
 

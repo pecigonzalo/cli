@@ -35,14 +35,15 @@ func TestGlobalHelp(t *testing.T) {
 	for _, s := range []string{
 		`Management Commands:`,
 		`\s+container\s+Manage containers`,
-		`\s+helloworld\*\s+A basic Hello World plugin for tests \(Docker Inc\., testing\)`,
+		`\s+helloworld\*\s+A basic Hello World plugin for tests`,
 		`\s+image\s+Manage images`,
 		`Commands:`,
 		`\s+create\s+Create a new container`,
 		`Invalid Plugins:`,
 		`\s+badmeta\s+invalid metadata: invalid character 'i' looking for beginning of object key string`,
 	} {
-		expected := regexp.MustCompile(`(?m)^` + s + `$`)
+		expected, err := regexp.Compile(`(?m)^` + s + `$`)
+		assert.NilError(t, err)
 		matches := expected.FindAllString(output, -1)
 		assert.Equal(t, len(matches), 1, "Did not find expected number of matches for %q in `docker help` output", expected)
 	}
@@ -78,6 +79,6 @@ func TestGlobalHelp(t *testing.T) {
 		})
 		assert.Assert(t, is.Equal(res2.Stdout(), ""))
 		assert.Assert(t, is.Contains(res2.Stderr(), "unknown flag: --badopt"))
-		assert.Assert(t, is.Contains(res2.Stderr(), "See 'docker --help"))
+		assert.Assert(t, is.Contains(res2.Stderr(), "Run 'docker --help' for more information"))
 	})
 }

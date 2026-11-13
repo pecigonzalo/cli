@@ -2,16 +2,17 @@ package container
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/internal/test"
 	"github.com/docker/cli/opts"
-	"github.com/docker/docker/api/types"
-	"github.com/pkg/errors"
+	"github.com/moby/moby/client"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 	"gotest.tools/v3/fs"
@@ -37,10 +38,10 @@ TWO=2
 	testcases := []struct {
 		options    ExecOptions
 		configFile configfile.ConfigFile
-		expected   types.ExecConfig
+		expected   client.ExecCreateOptions
 	}{
 		{
-			expected: types.ExecConfig{
+			expected: client.ExecCreateOptions{
 				Cmd:          []string{"command"},
 				AttachStdout: true,
 				AttachStderr: true,
@@ -48,7 +49,7 @@ TWO=2
 			options: withDefaultOpts(ExecOptions{}),
 		},
 		{
-			expected: types.ExecConfig{
+			expected: client.ExecCreateOptions{
 				Cmd:          []string{"command1", "command2"},
 				AttachStdout: true,
 				AttachStderr: true,
@@ -63,20 +64,19 @@ TWO=2
 				TTY:         true,
 				User:        "uid",
 			}),
-			expected: types.ExecConfig{
+			expected: client.ExecCreateOptions{
 				User:         "uid",
 				AttachStdin:  true,
 				AttachStdout: true,
 				AttachStderr: true,
-				Tty:          true,
+				TTY:          true,
 				Cmd:          []string{"command"},
 			},
 		},
 		{
 			options: withDefaultOpts(ExecOptions{Detach: true}),
-			expected: types.ExecConfig{
-				Detach: true,
-				Cmd:    []string{"command"},
+			expected: client.ExecCreateOptions{
+				Cmd: []string{"command"},
 			},
 		},
 		{
@@ -85,35 +85,32 @@ TWO=2
 				Interactive: true,
 				Detach:      true,
 			}),
-			expected: types.ExecConfig{
-				Detach: true,
-				Tty:    true,
-				Cmd:    []string{"command"},
+			expected: client.ExecCreateOptions{
+				TTY: true,
+				Cmd: []string{"command"},
 			},
 		},
 		{
 			options:    withDefaultOpts(ExecOptions{Detach: true}),
-			configFile: configfile.ConfigFile{DetachKeys: "de"},
-			expected: types.ExecConfig{
+			configFile: configfile.ConfigFile{DetachKeys: "ctrl-d,e"},
+			expected: client.ExecCreateOptions{
 				Cmd:        []string{"command"},
-				DetachKeys: "de",
-				Detach:     true,
+				DetachKeys: "ctrl-d,e",
 			},
 		},
 		{
 			options: withDefaultOpts(ExecOptions{
 				Detach:     true,
-				DetachKeys: "ab",
+				DetachKeys: "ctrl-a,b",
 			}),
-			configFile: configfile.ConfigFile{DetachKeys: "de"},
-			expected: types.ExecConfig{
+			configFile: configfile.ConfigFile{DetachKeys: "ctrl-d,e"},
+			expected: client.ExecCreateOptions{
 				Cmd:        []string{"command"},
-				DetachKeys: "ab",
-				Detach:     true,
+				DetachKeys: "ctrl-a,b",
 			},
 		},
 		{
-			expected: types.ExecConfig{
+			expected: client.ExecCreateOptions{
 				Cmd:          []string{"command"},
 				AttachStdout: true,
 				AttachStderr: true,
@@ -121,12 +118,12 @@ TWO=2
 			},
 			options: func() ExecOptions {
 				o := withDefaultOpts(ExecOptions{})
-				o.EnvFile.Set(tmpFile.Path())
+				_ = o.EnvFile.Set(tmpFile.Path())
 				return o
 			}(),
 		},
 		{
-			expected: types.ExecConfig{
+			expected: client.ExecCreateOptions{
 				Cmd:          []string{"command"},
 				AttachStdout: true,
 				AttachStderr: true,
@@ -134,34 +131,46 @@ TWO=2
 			},
 			options: func() ExecOptions {
 				o := withDefaultOpts(ExecOptions{})
-				o.EnvFile.Set(tmpFile.Path())
-				o.Env.Set("ONE=override")
+				_ = o.EnvFile.Set(tmpFile.Path())
+				_ = o.Env.Set("ONE=override")
 				return o
 			}(),
 		},
 	}
 
-	for _, testcase := range testcases {
-		execConfig, err := parseExec(testcase.options, &testcase.configFile)
-		assert.NilError(t, err)
-		assert.Check(t, is.DeepEqual(testcase.expected, *execConfig))
+	for i, testcase := range testcases {
+		t.Run("test "+strconv.Itoa(i+1), func(t *testing.T) {
+			execConfig, err := parseExec(testcase.options, &testcase.configFile)
+			assert.NilError(t, err)
+			assert.Check(t, is.DeepEqual(testcase.expected, *execConfig))
+		})
 	}
 }
 
-func TestParseExecNoSuchFile(t *testing.T) {
-	execOpts := withDefaultOpts(ExecOptions{})
-	execOpts.EnvFile.Set("no-such-env-file")
-	execConfig, err := parseExec(execOpts, &configfile.ConfigFile{})
-	assert.ErrorContains(t, err, "no-such-env-file")
-	assert.Check(t, os.IsNotExist(err))
-	assert.Check(t, execConfig == nil)
+func TestParseExecErrors(t *testing.T) {
+	t.Run("missing env-file", func(t *testing.T) {
+		execOpts := withDefaultOpts(ExecOptions{})
+		assert.Check(t, execOpts.EnvFile.Set("no-such-env-file"))
+		execConfig, err := parseExec(execOpts, &configfile.ConfigFile{})
+		assert.ErrorContains(t, err, "no-such-env-file")
+		assert.Check(t, os.IsNotExist(err))
+		assert.Check(t, execConfig == nil)
+	})
+	t.Run("invalid detach keys", func(t *testing.T) {
+		execOpts := withDefaultOpts(ExecOptions{
+			DetachKeys: "shift-a",
+		})
+		execConfig, err := parseExec(execOpts, &configfile.ConfigFile{})
+		assert.Check(t, is.ErrorContains(err, "invalid detach keys (shift-a):"))
+		assert.Check(t, is.Nil(execConfig))
+	})
 }
 
 func TestRunExec(t *testing.T) {
 	testcases := []struct {
 		doc           string
 		options       ExecOptions
-		client        fakeClient
+		client        *fakeClient
 		expectedError string
 		expectedOut   string
 		expectedErr   string
@@ -169,17 +178,16 @@ func TestRunExec(t *testing.T) {
 		{
 			doc: "successful detach",
 			options: withDefaultOpts(ExecOptions{
-				Container: "thecontainer",
-				Detach:    true,
+				Detach: true,
 			}),
-			client: fakeClient{execCreateFunc: execCreateWithID},
+			client: &fakeClient{execCreateFunc: execCreateWithID},
 		},
 		{
 			doc:     "inspect error",
 			options: NewExecOptions(),
-			client: fakeClient{
-				inspectFunc: func(string) (types.ContainerJSON, error) {
-					return types.ContainerJSON{}, errors.New("failed inspect")
+			client: &fakeClient{
+				inspectFunc: func(string) (client.ContainerInspectResult, error) {
+					return client.ContainerInspectResult{}, errors.New("failed inspect")
 				},
 			},
 			expectedError: "failed inspect",
@@ -188,29 +196,28 @@ func TestRunExec(t *testing.T) {
 			doc:           "missing exec ID",
 			options:       NewExecOptions(),
 			expectedError: "exec ID empty",
+			client:        &fakeClient{},
 		},
 	}
 
 	for _, testcase := range testcases {
 		t.Run(testcase.doc, func(t *testing.T) {
-			cli := test.NewFakeCli(&testcase.client)
+			fakeCLI := test.NewFakeCli(testcase.client)
 
-			err := RunExec(cli, testcase.options)
+			err := RunExec(context.TODO(), fakeCLI, "the-container", testcase.options)
 			if testcase.expectedError != "" {
 				assert.ErrorContains(t, err, testcase.expectedError)
-			} else {
-				if !assert.Check(t, err) {
-					return
-				}
+			} else if !assert.Check(t, err) {
+				return
 			}
-			assert.Check(t, is.Equal(testcase.expectedOut, cli.OutBuffer().String()))
-			assert.Check(t, is.Equal(testcase.expectedErr, cli.ErrBuffer().String()))
+			assert.Check(t, is.Equal(testcase.expectedOut, fakeCLI.OutBuffer().String()))
+			assert.Check(t, is.Equal(testcase.expectedErr, fakeCLI.ErrBuffer().String()))
 		})
 	}
 }
 
-func execCreateWithID(_ string, _ types.ExecConfig) (types.IDResponse, error) {
-	return types.IDResponse{ID: "execid"}, nil
+func execCreateWithID(_ string, _ client.ExecCreateOptions) (client.ExecCreateResult, error) {
+	return client.ExecCreateResult{ID: "exec-id"}, nil
 }
 
 func TestGetExecExitStatus(t *testing.T) {
@@ -237,13 +244,13 @@ func TestGetExecExitStatus(t *testing.T) {
 	}
 
 	for _, testcase := range testcases {
-		client := &fakeClient{
-			execInspectFunc: func(id string) (types.ContainerExecInspect, error) {
+		apiClient := &fakeClient{
+			execInspectFunc: func(id string) (client.ExecInspectResult, error) {
 				assert.Check(t, is.Equal(execID, id))
-				return types.ContainerExecInspect{ExitCode: testcase.exitCode}, testcase.inspectError
+				return client.ExecInspectResult{ExitCode: testcase.exitCode}, testcase.inspectError
 			},
 		}
-		err := getExecExitStatus(context.Background(), client, execID)
+		err := getExecExitStatus(context.Background(), apiClient, execID)
 		assert.Check(t, is.Equal(testcase.expectedError, err))
 	}
 }
@@ -253,20 +260,20 @@ func TestNewExecCommandErrors(t *testing.T) {
 		name                 string
 		args                 []string
 		expectedError        string
-		containerInspectFunc func(img string) (types.ContainerJSON, error)
+		containerInspectFunc func(img string) (client.ContainerInspectResult, error)
 	}{
 		{
 			name:          "client-error",
 			args:          []string{"5cb5bb5e4a3b", "-t", "-i", "bash"},
 			expectedError: "something went wrong",
-			containerInspectFunc: func(containerID string) (types.ContainerJSON, error) {
-				return types.ContainerJSON{}, errors.Errorf("something went wrong")
+			containerInspectFunc: func(containerID string) (client.ContainerInspectResult, error) {
+				return client.ContainerInspectResult{}, errors.New("something went wrong")
 			},
 		},
 	}
 	for _, tc := range testCases {
-		cli := test.NewFakeCli(&fakeClient{inspectFunc: tc.containerInspectFunc})
-		cmd := NewExecCommand(cli)
+		fakeCLI := test.NewFakeCli(&fakeClient{inspectFunc: tc.containerInspectFunc})
+		cmd := newExecCommand(fakeCLI)
 		cmd.SetOut(io.Discard)
 		cmd.SetArgs(tc.args)
 		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)

@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
 
-FROM alpine:3.14 AS gen
+# ALPINE_VERSION sets the version of the alpine base image to use.
+# It must be a supported tag in the docker.io/library/alpine image repository.
+ARG ALPINE_VERSION=3.24
+
+FROM alpine:${ALPINE_VERSION} AS gen
 RUN apk add --no-cache bash git
 WORKDIR /src
 RUN --mount=type=bind,target=. \
@@ -16,7 +20,7 @@ git add -A
 cp -rf /out/* .
 diff=$(git status --porcelain -- AUTHORS)
 if [ -n "$diff" ]; then
-  echo >&2 'ERROR: Authors result differs. Please update with "make -f docker.Makefile authors"'
+  echo >&2 'ERROR: Authors result differs. Update with "make -f docker.Makefile authors"'
   echo "$diff"
   exit 1
 fi

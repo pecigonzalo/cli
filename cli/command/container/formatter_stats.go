@@ -2,11 +2,11 @@ package container
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/docker/cli/cli/command/formatter"
-	"github.com/docker/docker/pkg/stringid"
-	units "github.com/docker/go-units"
+	"github.com/docker/go-units"
 )
 
 const (
@@ -22,9 +22,11 @@ const (
 	winMemUseHeader = "PRIV WORKING SET"  // Used only on Windows
 	memUseHeader    = "MEM USAGE / LIMIT" // Used only on Linux
 	pidsHeader      = "PIDS"              // Used only on Linux
+
+	noValue = "--"
 )
 
-// StatsEntry represents represents the statistics data collected from a container
+// StatsEntry represents the statistics data collected from a container
 type StatsEntry struct {
 	Container        string
 	Name             string
@@ -110,31 +112,27 @@ func NewStatsFormat(source, osType string) formatter.Format {
 	return formatter.Format(source)
 }
 
-// NewStats returns a new Stats entity and sets in it the given name
-func NewStats(container string) *Stats {
-	return &Stats{StatsEntry: StatsEntry{Container: container}}
+// NewStats returns a new Stats entity using the given ID, ID-prefix, or
+// name to resolve the container.
+func NewStats(idOrName string) *Stats {
+	// FIXME(thaJeztah): "idOrName" is used for fuzzy-matching the container, which can result in multiple stats for the same container.
+	// We should resolve the canonical ID once, then use that as reference
+	// to prevent duplicates. Various parts in the code compare Container
+	// against "ID" only (not considering "name" or "ID-prefix").
+	return &Stats{StatsEntry: StatsEntry{Container: idOrName}}
 }
 
 // statsFormatWrite renders the context for a list of containers statistics
-func statsFormatWrite(ctx formatter.Context, Stats []StatsEntry, osType string, trunc bool) error {
-	render := func(format func(subContext formatter.SubContext) error) error {
-		for _, cstats := range Stats {
-			statsCtx := &statsContext{
-				s:     cstats,
-				os:    osType,
-				trunc: trunc,
-			}
-			if err := format(statsCtx); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
+func statsFormatWrite(ctx formatter.Context, stats []StatsEntry, osType string, trunc bool) error {
+	// TODO(thaJeztah): this should be taken from the (first) StatsEntry instead.
+	// also, assuming all stats are for the same platform (and basing the
+	// column headers on that) won't allow aggregated results, which could
+	// be mixed platform.
 	memUsage := memUseHeader
 	if osType == winOSType {
 		memUsage = winMemUseHeader
 	}
-	statsCtx := statsContext{}
+	statsCtx := statsContext{os: osType}
 	statsCtx.Header = formatter.SubHeaderContext{
 		"Container": containerHeader,
 		"Name":      formatter.NameHeader,
@@ -146,8 +144,18 @@ func statsFormatWrite(ctx formatter.Context, Stats []StatsEntry, osType string, 
 		"BlockIO":   blockIOHeader,
 		"PIDs":      pidsHeader,
 	}
-	statsCtx.os = osType
-	return ctx.Write(&statsCtx, render)
+	return ctx.Write(&statsCtx, func(format func(subContext formatter.SubContext) error) error {
+		for _, cstats := range stats {
+			if err := format(&statsContext{
+				s:     cstats,
+				os:    osType,
+				trunc: trunc,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type statsContext struct {
@@ -166,22 +174,23 @@ func (c *statsContext) Container() string {
 }
 
 func (c *statsContext) Name() string {
-	if len(c.s.Name) > 1 {
-		return c.s.Name[1:]
+	// Trim the "/" prefix (if present).
+	if name := strings.TrimPrefix(c.s.Name, "/"); name != "" {
+		return name
 	}
-	return "--"
+	return noValue
 }
 
 func (c *statsContext) ID() string {
 	if c.trunc {
-		return stringid.TruncateID(c.s.ID)
+		return formatter.TruncateID(c.s.ID)
 	}
 	return c.s.ID
 }
 
 func (c *statsContext) CPUPerc() string {
 	if c.s.IsInvalid {
-		return "--"
+		return noValue
 	}
 	return formatPercentage(c.s.CPUPercentage)
 }
@@ -198,28 +207,28 @@ func (c *statsContext) MemUsage() string {
 
 func (c *statsContext) MemPerc() string {
 	if c.s.IsInvalid || c.os == winOSType {
-		return "--"
+		return noValue
 	}
 	return formatPercentage(c.s.MemoryPercentage)
 }
 
 func (c *statsContext) NetIO() string {
 	if c.s.IsInvalid {
-		return "--"
+		return noValue
 	}
 	return units.HumanSizeWithPrecision(c.s.NetworkRx, 3) + " / " + units.HumanSizeWithPrecision(c.s.NetworkTx, 3)
 }
 
 func (c *statsContext) BlockIO() string {
 	if c.s.IsInvalid {
-		return "--"
+		return noValue
 	}
 	return units.HumanSizeWithPrecision(c.s.BlockRead, 3) + " / " + units.HumanSizeWithPrecision(c.s.BlockWrite, 3)
 }
 
 func (c *statsContext) PIDs() string {
 	if c.s.IsInvalid || c.os == winOSType {
-		return "--"
+		return noValue
 	}
 	return strconv.FormatUint(c.s.PidsCurrent, 10)
 }

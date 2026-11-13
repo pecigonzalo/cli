@@ -1,39 +1,12 @@
----
-title: "unpause"
-description: "The unpause command description and usage"
-keywords: "cgroups, suspend, container"
----
+# docker unpause
 
-# unpause
-
-```markdown
-Usage:  docker unpause CONTAINER [CONTAINER...]
-
+<!---MARKER_GEN_START-->
 Unpause all processes within one or more containers
 
-Aliases:
-  docker container unpause, docker unpause
+### Aliases
 
-Options:
-      --help   Print usage
-```
+`docker container unpause`, `docker unpause`
 
-## Description
 
-The `docker unpause` command un-suspends all processes in the specified containers.
-On Linux, it does this using the freezer cgroup.
+<!---MARKER_GEN_END-->
 
-See the
-[freezer cgroup documentation](https://www.kernel.org/doc/Documentation/cgroup-v1/freezer-subsystem.txt)
-for further details.
-
-## Examples
-
-```console
-$ docker unpause my_container
-my_container
-```
-
-## Related commands
-
-* [pause](pause.md)
